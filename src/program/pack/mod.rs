@@ -9,16 +9,29 @@
 //! persistence format have different reasons to change, and the spec's
 //! EXTRACTION_FINGERPRINT closure (§8) names this module in its own right.
 //!
-//! # Two costs a reader of the measurement should know about
+//! # Wire layout
 //!
-//! 1. **`decode` re-serializes the whole pack to verify `self_hash`.** The hash
-//!    is defined as blake3 over the postcard encoding of every field except
-//!    itself, so checking it means producing those bytes again. That is a real,
-//!    inherent cost of THIS container shape, not of postcard: an envelope that
-//!    stored the hash over the already-encoded body would verify at
-//!    memcpy-speed and yield the identical `self_hash` value, without changing
-//!    this module's public interface. Recorded here so a slow decode number is
-//!    attributed to the right thing rather than to the format as a whole.
+//! ```text
+//! postcard(PackHeader { schema, self_hash })  ‖  postcard(DepPack)
+//! ```
+//!
+//! The hash covers the BODY BYTES, so [`decode`] verifies with one blake3 pass
+//! over a slice it already holds — it never re-encodes. An earlier revision
+//! stored `self_hash` as a plain field and re-serialized the decoded pack to
+//! check it, which cost 44 % of decode and would have made the measurement in
+//! spec §13 unattributable: near the abandon threshold we could not have told a
+//! slow format from a re-encode we chose to pay. The hash VALUE is unchanged by
+//! the envelope (same fields, same order, same bytes), and so is this module's
+//! public interface.
+//!
+//! Hashing the encoded bytes is also strictly stronger: a corruption postcard
+//! itself rejects now fails the hash first, instead of never reaching it.
+//!
+//! # Two things a reader should know
+//!
+//! 1. **Node ids carry an `AppRef`, and step 5 must re-intern it on load.** The
+//!    app-identity HEADER on [`DepPack`] is symbolic, but the payload is not —
+//!    see [`DepPack::app_guid`].
 //! 2. **Nothing here writes to a cache directory, and nothing should yet.** The
 //!    key (spec §7) and the behavioural canary (§8) are what make a real cache
 //!    directory safe; until they exist, a pack on disk under a wrong key is a
@@ -36,6 +49,14 @@ use crate::program::resolve::decl_surface::RoutineMeta;
 
 /// Bump when `DepPack`'s or `PackedFile`'s shape changes. Old packs then fail
 /// the check in [`decode`] and are recomputed. Never migrate in place.
+///
+/// CAVEAT: this is a SECOND line of defence, not the mechanism that rejects an
+/// old pack. postcard is not self-describing, so a genuinely different-shaped
+/// body usually fails `from_bytes` before any field is validated. The schema
+/// lives in the HEADER precisely so it is read before the body is parsed at
+/// all — but a shape change within a header-compatible layout is still caught
+/// by the body parse or the hash, not by this check. Every path is a miss, so
+/// this is not a soundness hole; it is only not the whole story.
 pub const PACK_SCHEMA: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,9 +80,23 @@ pub struct PackedFile {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DepPack {
     pub schema: u32,
-    /// App identity, SYMBOLIC. Never an `AppRef` — that is a per-run interning
-    /// index (`src/program/build.rs`) and persisting one yields silently-wrong
-    /// graphs rather than errors.
+    /// The app-identity HEADER, stored SYMBOLICALLY: guid/name/publisher/version,
+    /// never an `AppRef`. `AppRef` is a per-run interning index handed out in
+    /// encounter order by `AppRegistry::intern` (`src/program/node.rs`), so a
+    /// persisted one is meaningless in the next run.
+    ///
+    /// **The PAYLOAD is a different matter, and this is load-bearing for step 5.**
+    /// `ObjectNodeId.app` IS an `AppRef`, `RoutineNodeId` embeds an
+    /// `ObjectNodeId`, and every packed routine carries three of them
+    /// (`ObjectNode.id`, `RoutineNode.id`, and the `routine_meta` key). Those
+    /// ids are persisted as-is, so **a loader MUST re-intern every `AppRef`
+    /// against the current run's `AppRegistry`** before the nodes join a graph.
+    /// Skipping that yields silently-wrong graphs rather than errors.
+    ///
+    /// The re-intern deliberately does NOT happen inside [`decode`], and this
+    /// module exposes no surface for it: spec §13 requires the gate to MEASURE
+    /// that cost as part of the load, so burying it in the codec would hide it
+    /// from the very number it is meant to inform. Implementing it is step 5.
     pub app_guid: String,
     pub app_name: String,
     pub app_publisher: String,
@@ -71,9 +106,18 @@ pub struct DepPack {
     /// first occurrence per key, so a reordered pack changes which survivor
     /// wins (spec §12).
     pub files: Vec<PackedFile>,
-    /// blake3 over the postcard encoding of everything above. Cheap
-    /// belt-and-suspenders against bit-rot and hand edits, and what makes the
-    /// corrupted-payload test expressible.
+    /// blake3 over the postcard encoding of every field above, hex.
+    ///
+    /// `#[serde(skip)]` is what makes the envelope correct, not an oversight:
+    /// the encoded `DepPack` IS the body the hash covers, so the hash cannot
+    /// also be inside it. [`encode`] writes this value into the header and
+    /// [`decode`] restores it from there, so a round-trip is lossless.
+    ///
+    /// The consequence a reader must know: serializing a `DepPack` through any
+    /// OTHER format (a `serde_json` debug dump, say) silently omits this field.
+    /// The upside is that a field added to this struct is covered by the hash
+    /// automatically — only an explicit `skip` can exclude one.
+    #[serde(skip)]
     pub self_hash: String,
 }
 
@@ -157,13 +201,16 @@ impl PackedOrigin {
     }
 }
 
-/// `RawKind` as a varint index into [`RawKind::ALL`].
+/// `RawKind` as a varint index into [`RawKind::ALL`] on a BINARY format, and as
+/// its grammar kind string on a human-readable one.
 ///
-/// POSITIONAL, and therefore not stable across grammar revisions — a kind added
-/// mid-alphabet shifts every later index. That is sound here only because
-/// `crates/` is inside the pack fingerprint closure (spec §8), so regenerating
-/// the raw vocabulary invalidates every pack. An out-of-range index decodes to
-/// an error, never to a wrong kind.
+/// The index is POSITIONAL and therefore not stable across grammar revisions — a
+/// kind added mid-alphabet shifts every later index. That is sound for a pack
+/// only because `crates/` is inside the pack fingerprint closure (spec §8), so
+/// regenerating the raw vocabulary invalidates every pack. Nothing gives a
+/// human-readable dump that protection, so it gets the STRING, which is stable
+/// by construction. An out-of-range index decodes to an error, never to a wrong
+/// kind.
 mod raw_kind_wire {
     use al_syntax::raw::RawKind;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -171,6 +218,9 @@ mod raw_kind_wire {
     // `&RawKind` rather than `RawKind` because serde's `with` module requires
     // this exact signature.
     pub fn serialize<S: Serializer>(k: &RawKind, s: S) -> Result<S::Ok, S::Error> {
+        if s.is_human_readable() {
+            return k.as_str().serialize(s);
+        }
         // `RawKind` is fieldless with implicit discriminants, so `as u32` is
         // its declaration index; `RawKind::ALL[k as usize] == k` is asserted
         // exhaustively in al-syntax's own `raw` tests.
@@ -178,11 +228,21 @@ mod raw_kind_wire {
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<RawKind, D::Error> {
+        if d.is_human_readable() {
+            let s = String::deserialize(d)?;
+            return RawKind::try_from_raw(&s)
+                .ok_or_else(|| serde::de::Error::custom(format!("unknown raw kind {s:?}")));
+        }
         let i = u32::deserialize(d)?;
+        // A STATIC message, not a `format!`: on the binary path the format is
+        // postcard, whose `de::Error::custom` takes `_msg` and DISCARDS it
+        // (`postcard-1.1.3/src/error.rs`), so an interpolated index would be
+        // built and thrown away. The human-readable arm above keeps its detail
+        // because `serde_json` does preserve it.
         RawKind::ALL
             .get(i as usize)
             .copied()
-            .ok_or_else(|| serde::de::Error::custom(format!("raw kind index {i} out of range")))
+            .ok_or_else(|| serde::de::Error::custom("raw kind index out of range"))
     }
 }
 
@@ -213,60 +273,58 @@ pub mod origin_wire {
 // Codec
 // ---------------------------------------------------------------------------
 
-/// Every `DepPack` field except `self_hash`, borrowed. Hashing this rather than
-/// a blanked clone keeps [`compute_self_hash`] off the O(pack) copy that a
-/// `pack.clone()` would pay on the very path the gate is timing.
-#[derive(Serialize)]
-struct PackBody<'a> {
+/// The fixed-size prefix in front of the body. Read before the body is parsed,
+/// so a schema mismatch and a corrupt payload are both rejected without ever
+/// decoding the payload.
+#[derive(Debug, Serialize, Deserialize)]
+struct PackHeader<'a> {
     schema: u32,
-    app_guid: &'a str,
-    app_name: &'a str,
-    app_publisher: &'a str,
-    app_version: &'a str,
-    files: &'a [PackedFile],
+    /// blake3 of the body bytes that follow, hex — the value of
+    /// [`DepPack::self_hash`].
+    #[serde(borrow)]
+    self_hash: &'a str,
 }
 
-/// blake3 over every field except `self_hash` itself.
+/// blake3 over the postcard encoding of every `DepPack` field except
+/// `self_hash` — i.e. over exactly the bytes [`encode`] writes as the body.
+/// That identity is what lets [`decode`] verify the bytes it already holds
+/// instead of re-encoding what it decoded.
+///
+/// `self_hash` is excluded structurally (`#[serde(skip)]` on the field), not by
+/// a hand-maintained field list, so a field added to `DepPack` is hashed
+/// automatically.
 ///
 /// Returns the hash of an empty input if the pack contains an unencodable
 /// `Origin` kind; that pack cannot be [`encode`]d either, so the failure is
 /// still surfaced — loudly and with the offending kind named — there.
 #[must_use]
 pub fn compute_self_hash(pack: &DepPack) -> String {
-    // Exhaustive destructure ON PURPOSE: a field added to `DepPack` becomes a
-    // compile error here rather than a field that silently escapes the hash.
-    let DepPack {
-        schema,
-        app_guid,
-        app_name,
-        app_publisher,
-        app_version,
-        files,
-        self_hash: _,
-    } = pack;
-    let body = PackBody {
-        schema: *schema,
-        app_guid,
-        app_name,
-        app_publisher,
-        app_version,
-        files,
-    };
-    let bytes = postcard::to_stdvec(&body).unwrap_or_default();
+    let bytes = postcard::to_stdvec(pack).unwrap_or_default();
     blake3::hash(&bytes).to_hex().to_string()
 }
 
 /// Serialize a pack. The caller must have set `self_hash` via
 /// [`compute_self_hash`] first.
 pub fn encode(pack: &DepPack) -> Result<Vec<u8>, PackError> {
-    postcard::to_stdvec(pack).map_err(|e| match e {
-        // postcard DISCARDS `ser::Error::custom` messages (its `Error::custom`
-        // takes `_msg`), so the only way to say WHICH origin failed is to go
-        // find it. Done here, on the failure path only, so the diagnostic costs
-        // nothing on the path that succeeds.
+    let header = PackHeader {
+        schema: pack.schema,
+        self_hash: &pack.self_hash,
+    };
+    let out = postcard::to_extend(&header, Vec::new()).map_err(map_ser_err(pack))?;
+    // `to_extend` appends the body straight into the header's buffer, so the
+    // envelope costs no extra copy of the payload.
+    postcard::to_extend(pack, out).map_err(map_ser_err(pack))
+}
+
+/// postcard DISCARDS `ser::Error::custom` messages (its `Error::custom` takes
+/// `_msg`), so the only way to say WHICH origin failed is to go find it. Done
+/// on the failure path only, so the diagnostic costs nothing when encoding
+/// succeeds.
+fn map_ser_err(pack: &DepPack) -> impl Fn(postcard::Error) -> PackError + '_ {
+    move |e| match e {
         postcard::Error::SerdeSerCustom => PackError::Codec(unencodable_origin_report(pack)),
         other => PackError::Codec(other.to_string()),
-    })
+    }
 }
 
 /// Name the first `Origin` whose kind cannot be encoded. Failure path only.
@@ -292,16 +350,24 @@ fn unencodable_origin_report(pack: &DepPack) -> String {
 /// Every abnormal state is an `Err`, never a partial `Ok` — the consumer in
 /// spec step 5 treats any `Err` as a cache miss and recomputes.
 pub fn decode(bytes: &[u8]) -> Result<DepPack, PackError> {
-    let pack: DepPack = postcard::from_bytes(bytes).map_err(|e| PackError::Codec(e.to_string()))?;
-    if pack.schema != PACK_SCHEMA {
+    let (header, body) = postcard::take_from_bytes::<PackHeader>(bytes)
+        .map_err(|e| PackError::Codec(e.to_string()))?;
+    if header.schema != PACK_SCHEMA {
         return Err(PackError::SchemaMismatch {
-            found: pack.schema,
+            found: header.schema,
             expected: PACK_SCHEMA,
         });
     }
-    if compute_self_hash(&pack) != pack.self_hash {
+    // One blake3 pass over a slice already in hand. `to_hex()` returns a
+    // stack `ArrayString`, so this comparison allocates nothing.
+    if blake3::hash(body).to_hex().as_str() != header.self_hash {
         return Err(PackError::SelfHashMismatch);
     }
+    let mut pack: DepPack =
+        postcard::from_bytes(body).map_err(|e| PackError::Codec(e.to_string()))?;
+    // `self_hash` is `#[serde(skip)]` (it is the hash OF the body), so it
+    // arrives defaulted and is restored from the header.
+    pack.self_hash = header.self_hash.to_string();
     Ok(pack)
 }
 
@@ -313,6 +379,9 @@ pub fn decode(bytes: &[u8]) -> Result<DepPack, PackError> {
 mod tests {
     use super::*;
     use crate::program::node::{ObjKey, ObjectNodeId};
+    use crate::program::node_extract::test_fixtures::{
+        fully_populated_object_node, fully_populated_routine_node,
+    };
     use crate::program::resolve::decl_surface::ParamMeta;
     use al_syntax::ir::ObjectKind;
 
@@ -378,8 +447,13 @@ mod tests {
             files: vec![PackedFile {
                 virtual_path: "src/Sales/SalesPost.Codeunit.al".to_string(),
                 parse_status_recovered: true,
-                objects: vec![],
-                routines: vec![],
+                // Fix round 1 (#M-2): real nodes, not `vec![]`. These are the
+                // bulk of what the spec §13 gate prices, and postcard is not
+                // self-describing — Task 4's JSON round trip is not evidence
+                // about the binary one. Shared with `node_extract`'s own tests
+                // so both exercise the identical maximal node.
+                objects: vec![fully_populated_object_node()],
+                routines: vec![fully_populated_routine_node()],
                 routine_meta: vec![(sample_routine_id(), sample_routine_meta())],
             }],
             self_hash: String::new(),
@@ -417,6 +491,27 @@ mod tests {
         assert_eq!(back.kind_text, RawKind::TriggerDeclaration.as_str());
     }
 
+    /// Fix round 1 (#M-8): the positional index is only safe where the pack
+    /// fingerprint (spec §8) invalidates it on a grammar revision. A
+    /// human-readable dump has no such protection, so it must carry the
+    /// grammar STRING — stable by construction.
+    #[test]
+    fn a_human_readable_origin_carries_the_kind_string_not_the_index() {
+        let meta = sample_routine_meta();
+        let json = serde_json::to_string(&meta).expect("serialize to JSON");
+        assert!(
+            json.contains(r#""kind":"procedure""#),
+            "a JSON Origin must carry the grammar kind string, not a \
+             grammar-revision-unstable index; got: {json}"
+        );
+        assert!(
+            json.contains(r#""kind":"identifier""#),
+            "name_origin's kind must be a string too; got: {json}"
+        );
+        let back: RoutineMeta = serde_json::from_str(&json).expect("deserialize from JSON");
+        assert_eq!(back, meta);
+    }
+
     /// Hand-stated precondition: an `Origin` whose `kind_text` is not a named
     /// grammar kind. Production cannot currently produce one (see
     /// `every_decl_origin_kind_is_a_named_grammar_kind`), which is exactly why
@@ -448,57 +543,57 @@ mod tests {
         }
     }
 
-    /// STATED LIMIT of `a_corrupted_payload_is_rejected_not_misread`: deleting
-    /// the `self_hash` check leaves that test GREEN, because the `^= 0xFF` flip
-    /// it makes lands in UTF-8 string content and postcard's own decoder
-    /// rejects it. That is a real property of the code, not a broken test — so
-    /// the guard is pinned HERE instead, on the corruption class postcard
-    /// ACCEPTS. postcard is not self-describing: most single-bit flips are a
-    /// perfectly well-formed encoding of DIFFERENT values, and nothing but the
-    /// integrity check distinguishes them from the truth.
+    /// The WHOLE single-bit corruption population, partitioned by which guard
+    /// rejects it — and `leaked` asserted to be zero.
+    ///
+    /// This is stronger than sampling one flip: it says that of every reachable
+    /// single-bit corruption, NONE decodes to a wrong pack, and it reports how
+    /// the work is divided so the self-hash's contribution is a measured number
+    /// rather than an assumption.
+    ///
+    /// Under the pre-envelope layout the hash was checked AFTER the body was
+    /// decoded, so a corruption postcard rejected never reached it and
+    /// `identical`/`codec` carried a real share. Hashing the encoded body moved
+    /// that work: the hash now runs FIRST and catches everything in the body.
     #[test]
-    fn the_self_hash_catches_corruption_postcard_accepts() {
+    fn every_single_bit_corruption_is_rejected_and_the_hash_catches_most() {
         let mut pack = sample_pack();
         pack.self_hash = compute_self_hash(&pack);
         let bytes = encode(&pack).expect("encode");
 
-        let mut caught_by_hash = 0usize;
-        for i in 0..bytes.len() {
-            let mut c = bytes.clone();
-            c[i] ^= 0x01;
-            // Only the bytes postcard is happy to decode are this test's
-            // population; the rest are already covered by the Codec arm.
-            let Ok(decoded) = postcard::from_bytes::<DepPack>(&c) else {
-                continue;
-            };
-            // A flip that decodes back to the identical pack corrupted nothing
-            // observable, so accepting it is correct.
-            if decoded == pack {
-                continue;
+        let (mut hash, mut schema, mut codec, mut identical) = (0usize, 0usize, 0usize, 0usize);
+        let mut leaked: Vec<(usize, u32)> = Vec::new();
+        for bit in 0..8u32 {
+            for i in 0..bytes.len() {
+                let mut c = bytes.clone();
+                c[i] ^= 1u8 << bit;
+                match decode(&c) {
+                    Err(PackError::SelfHashMismatch) => hash += 1,
+                    Err(PackError::SchemaMismatch { .. }) => schema += 1,
+                    Err(PackError::Codec(_)) => codec += 1,
+                    // A flip that still yields the identical pack corrupted
+                    // nothing observable, so accepting it is correct.
+                    Ok(p) if p == pack => identical += 1,
+                    Ok(_) => leaked.push((i, bit)),
+                }
             }
-            // A flip landing in the leading `schema` varint is the SCHEMA
-            // check's population (pinned by
-            // `a_pack_from_a_different_schema_is_rejected`), and it fires
-            // first. Excluded so this test isolates the self-hash.
-            if decoded.schema != PACK_SCHEMA {
-                continue;
-            }
-            assert!(
-                matches!(decode(&c), Err(PackError::SelfHashMismatch)),
-                "byte {i}: postcard accepted the corruption and decoded a DIFFERENT pack, \
-                 so only the self-hash can reject it — but decode() did not"
-            );
-            caught_by_hash += 1;
         }
+        let total = bytes.len() * 8;
         assert!(
-            caught_by_hash > 0,
-            "no single-bit flip survived postcard, so this test proved nothing about the \
-             self-hash — the fixture is too small or too fragile to carry the guard"
+            leaked.is_empty(),
+            "corrupted packs decoded to a DIFFERENT pack with no guard firing, at \
+             (byte, bit): {leaked:?}"
+        );
+        assert_eq!(hash + schema + codec + identical + leaked.len(), total);
+        assert!(
+            hash > 0,
+            "no flip was caught by the self-hash, so this test proves nothing about it"
         );
         println!(
-            "the_self_hash_catches_corruption_postcard_accepts: {caught_by_hash} of {} \
-             single-bit flips were caught by the self-hash alone",
-            bytes.len()
+            "corruption partition over {total} single-bit flips ({} bytes): \
+             self_hash={hash} schema={schema} codec={codec} identical={identical} leaked={}",
+            bytes.len(),
+            leaked.len()
         );
     }
 
@@ -508,9 +603,6 @@ mod tests {
         pack.self_hash = compute_self_hash(&pack);
         let mut bytes = encode(&pack).expect("encode");
         // Flip one byte deep in the payload, past the schema prefix.
-        // NOTE: this specific flip is caught by postcard itself, not by the
-        // self-hash — see `the_self_hash_catches_corruption_postcard_accepts`,
-        // which pins the integrity check on the class postcard accepts.
         let idx = bytes.len() / 2;
         bytes[idx] ^= 0xFF;
         match decode(&bytes) {

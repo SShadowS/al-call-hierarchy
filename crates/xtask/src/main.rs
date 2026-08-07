@@ -11,8 +11,17 @@
 //!   multi-type fields. Shape safety only; no AL semantics.
 //! - `node-types.sha256` — sidecar the al-syntax build.rs hash-guards against.
 //!
-//! Output is checked in and never hand-edited. `--check` regenerates into memory
-//! and diffs against the committed files (CI drift guard).
+//! Output is checked in and never hand-edited. The drift guard CI actually runs
+//! is `scripts/ci-steps gen-syntax`, which regenerates and `git diff
+//! --exit-code`s the result.
+//!
+//! `--check` regenerates into memory and diffs against the committed files, and
+//! is CURRENTLY BROKEN: it compares the RAW generator output against files the
+//! write path has since run through `rustfmt`, so any construct rustfmt reflows
+//! reports as false drift on a pristine tree (today: an over-100-column match
+//! arm in `raw_kind.rs`, and `pub use` lists rustfmt sorts in `nodes.rs`/
+//! `mod.rs`). Nothing depends on it. Fixing it means formatting the in-memory
+//! content before the comparison, or deleting the flag.
 //!
 //! Design (owned-syntax-IR spec §3.2; reviewer-confirmed): only NAMED kinds become
 //! variants/structs; single-type field → typed accessor; multi NAMED-type field →
@@ -495,7 +504,7 @@ impl Model {
 
     fn gen_mod(&self) -> String {
         let mut s = header("mod.rs");
-        s.push_str("//! Generated raw grammar vocabulary + typed nodes. Regenerate with\n//! `cargo run -p xtask -- gen-syntax`; CI runs `--check` to catch drift.\n\n");
+        s.push_str("//! Generated raw grammar vocabulary + typed nodes. Regenerate with\n//! `cargo run -p xtask -- gen-syntax`; CI catches drift by REGENERATING and\n//! diffing (`scripts/ci-steps gen-syntax`), not with `--check`.\n\n");
         s.push_str("mod field;\nmod nodes;\nmod raw_kind;\n\n");
         s.push_str("pub use field::FieldName;\npub use raw_kind::{RawKind, GRAMMAR_NODE_TYPES_HASH, NAMED_KIND_COUNT};\n");
         s.push_str("#[allow(unused_imports)]\npub use nodes::*;\n");

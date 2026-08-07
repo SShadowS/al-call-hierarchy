@@ -684,15 +684,29 @@ pub fn extract_nodes(
     }
 }
 
+/// Maximal hand-built nodes, shared by this module's round-trip tests and by
+/// `crate::program::pack`'s fixture.
+///
+/// They live outside `mod tests` so the pack codec's `sample_pack()` can reach
+/// them: a pack whose `objects`/`routines` are `vec![]` would leave the bulk of
+/// the payload the spec §13 gate prices proven only through `serde_json` — and
+/// postcard is not self-describing, so a JSON round trip is not evidence about
+/// the binary one (fix round 1, #M-2).
+///
+/// Every optional field carries a real value, including combinations no real
+/// object produces (`source_table` is Page/Report-only and `table_no` is
+/// Codeunit-only, yet both are set; the routine mixes SOURCE-only and ABI-only
+/// values). These are serde probes, not `extract_nodes` output samples — the
+/// point is that no field is a `None`/`vec![]` standing in for a type the pack
+/// actually persists.
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_fixtures {
     use super::*;
-    use crate::program::node::{AppRef, ObjKey};
     use crate::snapshot::TrustTier;
 
-    #[test]
-    fn routine_node_survives_a_json_round_trip_with_every_field_populated() {
-        let node = RoutineNode {
+    #[must_use]
+    pub(crate) fn fully_populated_routine_node() -> RoutineNode {
+        RoutineNode {
             id: RoutineNodeId {
                 object: ObjectNodeId {
                     app: crate::program::node::AppRef(7),
@@ -739,7 +753,60 @@ mod tests {
                 subtype_raw_name: Some("Customer".to_string()),
                 subtype_tag: SubtypeTag::Full,
             }]),
-        };
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn fully_populated_object_node() -> ObjectNode {
+        ObjectNode {
+            id: ObjectNodeId {
+                app: crate::program::node::AppRef(3),
+                kind: al_syntax::ir::ObjectKind::Page,
+                key: crate::program::node::ObjKey::Id(50100),
+            },
+            name: "Sales Card".to_string(),
+            declared_id: Some(50100),
+            extends_target: Some("Base Card".to_string()),
+            implements: vec!["ICustomInterface".to_string()],
+            tier: TrustTier::EmbeddedSource,
+            source_table: Some(ObjectRef::Name {
+                raw: "Customer".to_string(),
+                normalized_lc: "customer".to_string(),
+            }),
+            table_no: Some(ObjectRef::Id(18)),
+            source_table_temporary: true,
+            page_controls: vec![PageControlNode {
+                name_lc: "lines".to_string(),
+                kind: PageControlKind::Part,
+                target: ObjectRef::Name {
+                    raw: "Sales Line Subform".to_string(),
+                    normalized_lc: "sales line subform".to_string(),
+                },
+            }],
+            fields: vec![FieldNode {
+                name_lc: "no.".to_string(),
+                type_text: "Code[20]".to_string(),
+            }],
+            dataitems: vec![DataitemNode {
+                name_lc: "customer".to_string(),
+                name: "Customer".to_string(),
+                source_table: ObjectRef::Id(18),
+            }],
+            parse_incomplete: true,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_fixtures::{fully_populated_object_node, fully_populated_routine_node};
+    use super::*;
+    use crate::program::node::{AppRef, ObjKey};
+    use crate::snapshot::TrustTier;
+
+    #[test]
+    fn routine_node_survives_a_json_round_trip_with_every_field_populated() {
+        let node = fully_populated_routine_node();
 
         let json = serde_json::to_string(&node).expect("serialize");
         let back: RoutineNode = serde_json::from_str(&json).expect("deserialize");
@@ -794,42 +861,7 @@ mod tests {
     /// which real object shape would produce that exact combination.
     #[test]
     fn object_node_survives_a_json_round_trip_with_every_field_populated() {
-        let node = ObjectNode {
-            id: ObjectNodeId {
-                app: crate::program::node::AppRef(3),
-                kind: al_syntax::ir::ObjectKind::Page,
-                key: crate::program::node::ObjKey::Id(50100),
-            },
-            name: "Sales Card".to_string(),
-            declared_id: Some(50100),
-            extends_target: Some("Base Card".to_string()),
-            implements: vec!["ICustomInterface".to_string()],
-            tier: TrustTier::EmbeddedSource,
-            source_table: Some(ObjectRef::Name {
-                raw: "Customer".to_string(),
-                normalized_lc: "customer".to_string(),
-            }),
-            table_no: Some(ObjectRef::Id(18)),
-            source_table_temporary: true,
-            page_controls: vec![PageControlNode {
-                name_lc: "lines".to_string(),
-                kind: PageControlKind::Part,
-                target: ObjectRef::Name {
-                    raw: "Sales Line Subform".to_string(),
-                    normalized_lc: "sales line subform".to_string(),
-                },
-            }],
-            fields: vec![FieldNode {
-                name_lc: "no.".to_string(),
-                type_text: "Code[20]".to_string(),
-            }],
-            dataitems: vec![DataitemNode {
-                name_lc: "customer".to_string(),
-                name: "Customer".to_string(),
-                source_table: ObjectRef::Id(18),
-            }],
-            parse_incomplete: true,
-        };
+        let node = fully_populated_object_node();
 
         let json = serde_json::to_string(&node).expect("serialize");
         let back: ObjectNode = serde_json::from_str(&json).expect("deserialize");

@@ -64,7 +64,10 @@ mod tests {
     /// matches the generated variant order, so it is asserted here.
     #[test]
     fn all_is_positional_and_round_trips_every_kind() {
-        assert_eq!(RawKind::ALL.len(), NAMED_KIND_COUNT + 1);
+        // NOTE: `ALL.len() == NAMED_KIND_COUNT + 1` is deliberately NOT
+        // asserted — `ALL`'s declared type IS `[RawKind; NAMED_KIND_COUNT + 1]`,
+        // so a wrong count is a compile error and the assertion could never
+        // fail. The two assertions below are the ones that can.
         for (i, k) in RawKind::ALL.iter().enumerate() {
             assert_eq!(*k as usize, i, "ALL[{i}] = {k:?} is not at its own index");
             assert_eq!(

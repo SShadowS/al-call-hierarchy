@@ -17,11 +17,20 @@ format's round-trip cost can be measured on real data before that seam is built,
 which is where `docs/superpowers/specs/2026-08-07-dependency-pack-cache-design.md`
 §13 places the go/no-go.
 
-App identity is stored SYMBOLICALLY (guid/name/publisher/version), never as an
-`AppRef` — that is a per-run interning index, and persisting one yields
-silently-wrong graphs rather than errors. Per-file order is preserved because
-`dedup_routines_preserving_genuine_overloads` keeps the first occurrence per key,
-so a reordered pack changes which survivor wins (spec §12).
+The app-identity HEADER is stored SYMBOLICALLY (guid/name/publisher/version),
+never as an `AppRef`. **The payload is a different matter, and a loader must know
+it:** `ObjectNodeId.app` IS an `AppRef` — a per-run interning index handed out in
+encounter order — and every packed routine carries three of them (`ObjectNode.id`,
+`RoutineNode.id`, the `routine_meta` key). Those ids are persisted as-is, so spec
+step 5 MUST re-intern every `AppRef` against the current run's `AppRegistry` before
+the nodes join a graph; skipping that yields silently-wrong graphs rather than
+errors. The re-intern deliberately does not happen inside `decode` and the codec
+exposes no surface for it, because spec §13 requires the gate to MEASURE that cost
+as part of the load.
+
+Per-file order is preserved because `dedup_routines_preserving_genuine_overloads`
+keeps the first occurrence per key, so a reordered pack changes which survivor wins
+(spec §12).
 
 `RoutineMeta` IS carried in the pack (`PackedFile::routine_meta`), which is why
 `RoutineMeta`/`ParamMeta` gained `Serialize`/`Deserialize`/`PartialEq`/`Eq`. It is
@@ -40,13 +49,28 @@ decode goes through `RawKind::as_str()`, which returns `&'static str`, so loadin
 `Origin` allocates nothing and the wire carries a varint. An unencodable kind means
 the app is simply not packed — cold path, fail-closed, never a panic — and because
 postcard discards `serde::ser::Error::custom` messages, `encode` re-walks the pack
-on the failure path only to name the offending file, routine and kind.
+on the failure path only to name the offending file, routine and kind. The index is
+positional and so grammar-revision-unstable, which is sound only because `crates/`
+is inside the pack fingerprint closure (spec §8) — a human-readable dump has no such
+protection, so `is_human_readable()` gives JSON the kind STRING and the binary wire
+the varint.
 
-Known cost, recorded so the measurement is attributed correctly: `decode`
-re-serializes the whole pack to verify `self_hash`, because the hash is defined over
-the postcard encoding of every other field. An envelope hashing the already-encoded
-body would verify at memcpy speed and yield the identical `self_hash` value without
-changing this module's public interface.
+The wire is an envelope: `postcard(PackHeader { schema, self_hash })` followed by
+`postcard(DepPack)`, with `self_hash` `#[serde(skip)]` so the encoded pack IS the
+body the hash covers. `decode` therefore verifies with one blake3 pass over a slice
+it already holds instead of re-encoding what it just decoded, which was measured at
+33 % of decode (670 µs → 448 µs on a 1050-routine pack). Hashing the encoded bytes
+is also strictly stronger: corruption postcard itself rejects now fails the hash
+first rather than never reaching it, taking the share of single-bit flips caught by
+the integrity check from 299/322 to 5127/5200, with zero flips decoding to a wrong
+pack in either layout.
+
+`RoutineNodeId.sig_fp`'s decimal-string encoding is now gated on
+`is_human_readable()`. It exists for JavaScript LSP clients (JSON numbers are exact
+only to 2^53) and is load-bearing THERE, but on the binary wire a `u64` is exact by
+construction, so the detour cost a `to_string` per encode and a `String` +
+`parse::<u64>()` per decode on every routine — ~253k allocations per load at the
+scale a pack is built for. The JSON contract is unchanged and still tested.
 
 ### Added - `RawKind::try_from_raw` and `RawKind::ALL` (generated)
 
@@ -70,6 +94,22 @@ next `cargo run -p xtask -- gen-syntax` would silently revert a hand edit.
 `al_syntax::ir::Origin` also gained `PartialEq`/`Eq` so a wire round-trip can be
 asserted totally rather than field-by-field, which a struct growing a field would
 silently stop covering.
+
+### Fixed - `xtask gen-syntax`'s doc no longer claims CI runs `--check`, which is both false and broken
+
+The generated `raw/generated/mod.rs` header said "CI runs `--check` to catch drift".
+CI does not: `scripts/ci-steps gen-syntax` regenerates and `git diff --exit-code`s
+the result, which is a sound guard. `--check` is a different, unused code path, and
+it reports false drift on a pristine tree — it compares the RAW generator output
+against files the write path has since run through `rustfmt`, so anything rustfmt
+reflows looks stale. Today that is three files: an over-100-column match arm in
+`raw_kind.rs` (two arms, introduced by `try_from_raw` above) and the `pub use` lists
+rustfmt sorts in `nodes.rs` and `mod.rs`.
+
+Corrected in the generator (so the claim does not come back on the next regen) and
+recorded in `xtask`'s own module doc, including how to fix `--check` if it is ever
+wanted: format the in-memory content before comparing, or delete the flag. Nothing
+depends on it today.
 
 ### Fixed - `xtask gen-syntax` explains a missing grammar checkout instead of a bare `os error 3`, and now honours `TREE_SITTER_AL_PATH`
 
