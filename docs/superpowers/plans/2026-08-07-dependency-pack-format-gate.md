@@ -71,9 +71,16 @@ Spec §17.1, §17.2, §17.4. Pure documentation. No behaviour changes, no tests 
 
 ```bash
 cd U:/Git/al-call-hierarchy
-# §17.1 — pruning genuinely absent from the preflight cache
-grep -nE 'prune|max_age|max_size|remove_file' src/program/resolve/preflight_cache.rs
-# Expected: exactly ONE hit, the failed-rename cleanup `let _ = std::fs::remove_file(&tmp);`
+# §17.1 — pruning genuinely absent from the preflight cache.
+# Exclude doc-comment lines: three of them mention `cache prune` /
+# `engine/gate/cache_prune.rs`, which is a DIFFERENT, pre-existing module and
+# says nothing about whether THIS cache prunes.
+grep -nE 'prune|max_age|max_size|remove_file' src/program/resolve/preflight_cache.rs \
+  | grep -v '^\s*[0-9]*:\s*///'
+# Expected: exactly ONE line, the failed-rename cleanup
+# `let _ = std::fs::remove_file(&tmp);`. If you run the unfiltered grep you will
+# see FOUR hits — three doc-comment mentions plus that one. Four is the correct
+# and expected result of the unfiltered command; it does NOT mean pruning exists.
 
 # §17.2 — no thread-local parsers anywhere
 grep -rn 'thread_local' --include=*.rs src/ crates/
