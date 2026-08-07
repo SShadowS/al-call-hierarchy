@@ -351,9 +351,15 @@ analogy still does not hold: a decode additionally does file I/O, varint parsing
 validation on every string, enum discriminant decoding and the guid→`AppRef` re-intern, none
 of which a clone pays. A serial decode plausibly lands at 100–250 ms — straddling the gate.
 
-What was expected to carry the recommendation is **parallelism**: packs are per-app files
-decoded inside `build_dep_layer`'s per-app loop, on the same rayon pool `parse_snapshot`
-already uses (`src/snapshot/parse.rs:86-95`).
+What was expected to carry the recommendation is **parallelism** — packs decoded per app,
+concurrently.
+
+**That wiring does not exist and step 5 must build it.** `build_dep_layer`'s per-app loop is
+a plain serial `for unit in parsed` installing no pool (`src/program/build.rs:83-98`), and
+`parse_snapshot`'s pool parallelism is per-FILE within one app
+(`src/snapshot/parse.rs:86-95`) — there is no per-app parallel structure to inherit. The gate
+bench had to build its own `par_iter` over pack paths
+(`benches/dep_pack_roundtrip.rs:437-441`); the seam will have to do the same.
 
 > **FALSIFIED BY THE MEASUREMENT — do not build on this paragraph.** The gate showed
 > parallelism buys almost nothing here. Base Application is 100,944 of 119,773 routines in ONE
@@ -426,8 +432,10 @@ Raised and deliberately parked during `2026-08-07-dependency-pack-format-gate`, 
 each is a CODE change outside that plan's scope. They must not be lost between plans.
 
 - **`encode` trusts its caller to have called `compute_self_hash` first.** Nothing
-  type-level enforces it. Every caller is correct today (three tests plus the bench), so
-  this is not a live defect — but the durable fix is to make `self_hash` unconstructible
+  type-level enforces it. All SEVEN callers are correct today — six in
+  `src/program/pack/mod.rs` plus the bench's `encode_packs`
+  (`benches/dep_pack_roundtrip.rs:378`) — so
+  this is not a live defect. The durable fix is to make `self_hash` unconstructible
   by hand, or have `encode` compute it itself, so a future caller cannot write a pack
   whose hash does not cover its body. Do this when the seam lands, before any pack
   reaches a real cache directory.
