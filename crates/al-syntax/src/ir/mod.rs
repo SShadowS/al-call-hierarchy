@@ -33,7 +33,12 @@ pub struct Point {
 }
 
 /// Provenance of an IR node: where it came from in source, for anchors + findings.
-#[derive(Clone, Debug)]
+///
+/// `PartialEq`/`Eq` are structural over every field, so a test that round-trips an
+/// `Origin` through a wire format can assert equality TOTALLY rather than
+/// field-by-field — a hand-listed comparison silently stops covering any field
+/// added later (`src/program/pack`'s codec tests rely on this).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Origin {
     /// The raw grammar kind string, fed verbatim to anchor `syntax_kind` (parity).
     pub kind_text: &'static str,

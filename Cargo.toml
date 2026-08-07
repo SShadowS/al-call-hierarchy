@@ -64,6 +64,11 @@ serde_yaml = "0.9"
 # (`new RegExp('^'+escaped+'$','i')`) faithfully (see policy `glob_compile`).
 regex = "1"
 
+# Dependency-pack persistence (`src/program/pack`). Non-self-describing, varint
+# framed — field names never reach the wire, which is the whole reason a pack of
+# ~127k routines is worth writing at all. `use-std` for `to_stdvec`.
+postcard = { version = "1", features = ["use-std"] }
+
 # Hashing (R0 identity encoders and snapshot content identity)
 sha2 = "0.10"
 blake3 = { version = "1" }

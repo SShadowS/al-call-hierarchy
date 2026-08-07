@@ -2,8 +2,9 @@
 //!
 //! Generates the al-syntax *raw layer* from the pinned tree-sitter-al
 //! `node-types.json`:
-//! - `raw_kind.rs` — `RawKind` (exhaustive over NAMED kinds + `Error`), `from_raw`
-//!   (panics on unknown), `as_str`, `GRAMMAR_NODE_TYPES_HASH`, `NAMED_KIND_COUNT`.
+//! - `raw_kind.rs` — `RawKind` (exhaustive over NAMED kinds + `Error`), `try_from_raw`
+//!   (`None` on unknown), `from_raw` (panics on unknown), `as_str`, `ALL`,
+//!   `GRAMMAR_NODE_TYPES_HASH`, `NAMED_KIND_COUNT`.
 //! - `field.rs` — `FieldName` (exhaustive over field names), `as_raw`.
 //! - `nodes.rs` — a typed wrapper struct per NAMED kind (`RawProcedure<'t>`) with
 //!   `cast`/`node` + typed field accessors, plus deduplicated union enums for
@@ -300,25 +301,63 @@ impl Model {
         );
 
         s.push_str("impl RawKind {\n");
+        s.push_str("    /// Map a tree-sitter `node.kind()` string to a `RawKind`, or `None`.\n");
+        s.push_str("    ///\n    /// The FALLIBLE entry point. `None` means the string is not a named kind of\n");
+        s.push_str(
+            "    /// the pinned grammar — an anonymous token kind (`kind_str()` returns those\n",
+        );
+        s.push_str(
+            "    /// too, for any node) or a kind from a different grammar. Exists so a caller\n",
+        );
+        s.push_str(
+            "    /// that must not crash on such a string — a persistence layer, which fails to\n",
+        );
+        s.push_str(
+            "    /// STORE rather than abort (`src/program/pack`'s Origin codec) — has a total\n",
+        );
+        s.push_str(
+            "    /// function to call. Prefer [`Self::from_raw`] wherever a non-named kind\n",
+        );
+        s.push_str("    /// would be a bug.\n");
+        s.push_str("    pub fn try_from_raw(s: &str) -> Option<RawKind> {\n        match s {\n");
+        for (raw, var) in &self.kinds {
+            s.push_str(&format!("            {raw:?} => Some(RawKind::{var}),\n"));
+        }
+        s.push_str("            \"ERROR\" => Some(RawKind::Error),\n");
+        s.push_str("            _ => None,\n        }\n    }\n\n");
+
         s.push_str("    /// Map a tree-sitter `node.kind()` string to a `RawKind`.\n");
         s.push_str("    ///\n    /// LOUD on unknown: only NAMED kinds are passed here (the lowerer classifies\n");
         s.push_str(
             "    /// named children); an unknown string means the binary was built against a\n",
         );
         s.push_str("    /// different grammar than it is parsing — a bug, not data.\n");
-        s.push_str("    pub fn from_raw(s: &str) -> RawKind {\n        match s {\n");
-        for (raw, var) in &self.kinds {
-            s.push_str(&format!("            {raw:?} => RawKind::{var},\n"));
-        }
-        s.push_str("            \"ERROR\" => RawKind::Error,\n");
-        s.push_str("            other => panic!(\n                \"al-syntax: unknown node kind {other:?} — grammar/binary mismatch \\\n                 (regenerate with `cargo run -p xtask -- gen-syntax`)\"\n            ),\n        }\n    }\n\n");
+        s.push_str("    pub fn from_raw(s: &str) -> RawKind {\n");
+        s.push_str("        match Self::try_from_raw(s) {\n            Some(k) => k,\n            None => panic!(\n                \"al-syntax: unknown node kind {s:?} — grammar/binary mismatch \\\n                 (regenerate with `cargo run -p xtask -- gen-syntax`)\"\n            ),\n        }\n    }\n\n");
 
         s.push_str("    /// The grammar kind string (round-trips `from_raw`).\n");
         s.push_str("    pub fn as_str(self) -> &'static str {\n        match self {\n");
         for (raw, var) in &self.kinds {
             s.push_str(&format!("            RawKind::{var} => {raw:?},\n"));
         }
-        s.push_str("            RawKind::Error => \"ERROR\",\n        }\n    }\n}\n\n");
+        s.push_str("            RawKind::Error => \"ERROR\",\n        }\n    }\n\n");
+
+        s.push_str("    /// Every variant, in DECLARATION order, so `ALL[k as usize] == k`\n");
+        s.push_str("    /// for every `k` — the enum is fieldless and carries no explicit\n");
+        s.push_str("    /// discriminants, so a variant's `as usize` IS its position here.\n");
+        s.push_str(
+            "    ///\n    /// Enables exhaustive iteration over the vocabulary, and a total\n",
+        );
+        s.push_str("    /// index → kind mapping for callers that encode a kind positionally.\n");
+        s.push_str("    /// POSITIONAL, therefore NOT stable across grammar revisions: a kind\n");
+        s.push_str("    /// added mid-alphabet shifts every later index. Anything persisting an\n");
+        s.push_str("    /// index must key on the grammar identity too (`src/program/pack`\n");
+        s.push_str("    /// relies on `crates/` being inside the pack fingerprint closure).\n");
+        s.push_str("    pub const ALL: [RawKind; NAMED_KIND_COUNT + 1] = [\n");
+        for (_raw, var) in &self.kinds {
+            s.push_str(&format!("        RawKind::{var},\n"));
+        }
+        s.push_str("        RawKind::Error,\n    ];\n}\n\n");
 
         s.push_str(&format!(
             "/// sha256 of the `node-types.json` this file was generated from. al-syntax\n/// `build.rs` asserts the checked-in grammar matches, so a silent grammar swap\n/// fails the build.\npub const GRAMMAR_NODE_TYPES_HASH: &str = {:?};\n\n",

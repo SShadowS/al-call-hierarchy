@@ -15,26 +15,39 @@ use std::sync::Arc;
 
 use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{Origin, RoutineDecl};
+use serde::{Deserialize, Serialize};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::ParsedUnit;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParamMeta {
     pub ty: Option<String>,
     pub by_ref: bool,
 }
 
-#[derive(Debug, Clone)]
+/// Serde is here because `RoutineMeta` is PERSISTED in a dependency pack
+/// (`crate::program::pack`) — it is not derivable on a pack hit, since
+/// [`RoutineMeta::from_decl`] consumes a `RoutineDecl` and the `ParsedUnit`s
+/// those come from are exactly what a hit avoids building.
+///
+/// The two `Origin`s route through `pack::origin_wire` rather than deriving:
+/// `Origin::kind_text` is a `&'static str` (load-bearing for anchor
+/// `syntax_kind` parity) and cannot `Deserialize`. The wire carries it as a
+/// `RawKind` discriminant, so decoding an `Origin` allocates nothing — see
+/// [`crate::program::pack::PackedOrigin`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineMeta {
     pub name: String,
     /// Name half of `RoutineDecl::enclosing_member` (origin half unused).
     pub enclosing_member: Option<String>,
     pub parse_incomplete: bool,
     pub params: Vec<ParamMeta>,
+    #[serde(with = "crate::program::pack::origin_wire")]
     pub origin: Origin,
+    #[serde(with = "crate::program::pack::origin_wire")]
     pub name_origin: Origin,
     pub virtual_path: String,
 }

@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - `src/program/pack`: the dependency-pack codec (`DepPack` to bytes and back)
+
+One dependency app's extraction output, encoded with `postcard` (new dependency)
+and framed by a `PACK_SCHEMA` check plus a blake3 `self_hash`. Persistence ONLY —
+no engine wiring, no cache directory, no ingestion path: obtaining a pack, keying
+it and loading it into `build_dep_layer` is spec step 5. This exists so the
+format's round-trip cost can be measured on real data before that seam is built,
+which is where `docs/superpowers/specs/2026-08-07-dependency-pack-cache-design.md`
+§13 places the go/no-go.
+
+App identity is stored SYMBOLICALLY (guid/name/publisher/version), never as an
+`AppRef` — that is a per-run interning index, and persisting one yields
+silently-wrong graphs rather than errors. Per-file order is preserved because
+`dedup_routines_preserving_genuine_overloads` keeps the first occurrence per key,
+so a reordered pack changes which survivor wins (spec §12).
+
+`RoutineMeta` IS carried in the pack (`PackedFile::routine_meta`), which is why
+`RoutineMeta`/`ParamMeta` gained `Serialize`/`Deserialize`/`PartialEq`/`Eq`. It is
+not derivable on a hit — `RoutineMeta::from_decl` consumes a `RoutineDecl`, and the
+`ParsedUnit`s those come from are exactly what a hit avoids building — and nothing
+in `RoutineNode` can reconstruct `virtual_path`, the two `Origin`s, or per-param
+`ty`/`by_ref`. It is also the cost class the measurement exists to price, so a pack
+without it would make the gate a lower bound rather than a decision.
+
+`Origin.kind_text` is a `&'static str` (fed verbatim to anchor `syntax_kind` for
+parity) and so cannot `Deserialize`. Rather than changing the IR type, widening it
+to `String` (~253k extra allocations per load, forever, to carry a value from a
+closed 389-member set) or dropping it (an unaudited lossy field), the wire encodes
+it as a `RawKind` discriminant through a new fallible `RawKind::try_from_raw`;
+decode goes through `RawKind::as_str()`, which returns `&'static str`, so loading an
+`Origin` allocates nothing and the wire carries a varint. An unencodable kind means
+the app is simply not packed — cold path, fail-closed, never a panic — and because
+postcard discards `serde::ser::Error::custom` messages, `encode` re-walks the pack
+on the failure path only to name the offending file, routine and kind.
+
+Known cost, recorded so the measurement is attributed correctly: `decode`
+re-serializes the whole pack to verify `self_hash`, because the hash is defined over
+the postcard encoding of every other field. An envelope hashing the already-encoded
+body would verify at memcpy speed and yield the identical `self_hash` value without
+changing this module's public interface.
+
+### Added - `RawKind::try_from_raw` and `RawKind::ALL` (generated)
+
+`try_from_raw` is the total sibling of `from_raw`: `None` where `from_raw` panics
+(an anonymous token kind, or a string from a different grammar). It exists so a
+persistence layer can fail to STORE rather than abort — `RawNode::kind_str` returns
+the raw kind of ANY node, named or anonymous, and nothing at the type level
+restricts which nodes an `Origin` is minted from. `from_raw` is now implemented in
+terms of it, so the 389-arm match is generated once and the panic contract is
+unchanged.
+
+`ALL` is every variant in declaration order, so `ALL[k as usize] == k`. It gives the
+vocabulary exhaustive iteration and a total index-to-kind mapping for callers that
+encode a kind positionally. It is POSITIONAL and therefore not stable across grammar
+revisions — sound for the pack only because `crates/` is inside the pack fingerprint
+closure (spec §8), so regenerating the raw vocabulary invalidates every pack.
+
+Both come from the GENERATOR (`crates/xtask/src/main.rs`), not a hand edit to
+`crates/al-syntax/src/raw/generated/raw_kind.rs` — that file is `@generated` and the
+next `cargo run -p xtask -- gen-syntax` would silently revert a hand edit.
+`al_syntax::ir::Origin` also gained `PartialEq`/`Eq` so a wire round-trip can be
+asserted totally rather than field-by-field, which a struct growing a field would
+silently stop covering.
+
 ### Fixed - `xtask gen-syntax` explains a missing grammar checkout instead of a bare `os error 3`, and now honours `TREE_SITTER_AL_PATH`
 
 `gen-syntax` needs `tree-sitter-al/src/node-types.json`, but a git worktree
