@@ -142,7 +142,7 @@
 //! `UnknownReason` payload (subsumed by `EvidenceKind`, itself a deliberate
 //! serialization-boundary projection elsewhere in this engine), `LspSnapshot::
 //! generation` (monotonic counter vs. always-`0`, not a correctness signal),
-//! `Origin::kind_text` (EPHEMERAL by the IR's own doc).
+//! `Origin::kind_text` (excluded from the comparison; see the module doc).
 //! `Route::receiver_tier` is excluded too: its own doc (`edge.rs`) already
 //! states it is diagnostic-only and is never compared against the committed
 //! semantic goldens, for the same serialization-boundary discipline as
@@ -262,7 +262,7 @@ fn canon_edges(edges: &[ClassifiedEdge]) -> Vec<CanonEdge> {
 }
 
 /// `(byte start, byte end, start (row, col), end (row, col))` — projects
-/// away `Origin`'s EPHEMERAL `kind_text` field (see the module
+/// away `Origin`'s `kind_text` field (see the module
 /// doc). `Origin` itself carries no derived `PartialEq`/`Ord`, so this is
 /// the only way to compare two `Origin`s at all.
 type CanonOrigin = (usize, usize, (u32, u32), (u32, u32));
