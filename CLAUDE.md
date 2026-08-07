@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+Write in plain English.
+Use common words and short sentences. Avoid jargon when a simpler term exists. If a technical term is necessary, define it the first time you use it.
+Assume I am intelligent but unfamiliar with the terminology. Be concise, but do not remove details needed for correctness.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
