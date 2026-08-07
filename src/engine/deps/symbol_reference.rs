@@ -16,7 +16,7 @@
 //! an `error` string (the TS "never throws" / catch posture).
 
 use crate::engine::l3::al_attributes::{AttributeArg, AttributeInfo};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// "integration" | "business" | "unknown" — only meaningful when the routine kind
@@ -76,7 +76,7 @@ impl AbiEventKind {
 /// now exercised via the real parse path by a test in this module's `mod
 /// tests`. The `as_str()` string VALUES (distinct from variant closure) are
 /// separately pinned — see [`SubtypeTag::as_str`]'s doc.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubtypeTag {
     /// No `TypeDefinition` at all.
     NoTypeDefinition,

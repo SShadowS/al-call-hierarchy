@@ -2,6 +2,7 @@
 
 use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, ObjectKind, Param, ParseStatus, RoutineKind};
+use serde::{Deserialize, Serialize};
 
 use crate::engine::deps::symbol_reference::SubtypeTag;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
@@ -14,7 +15,7 @@ use crate::program::resolve::receiver::unquote_identifier;
 use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::TrustTier;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Access {
     Public,
     Local,
@@ -41,7 +42,7 @@ impl Access {
 /// each shape to the correct index without re-parsing.
 ///
 /// [`ResolveIndex::resolve_object_ref`]: crate::program::resolve::index::ResolveIndex::resolve_object_ref
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObjectRef {
     /// A name reference. `raw` preserves the as-written (unquoted) text for
     /// display; `normalized_lc` is the lowercased form used for matching.
@@ -52,7 +53,7 @@ pub enum ObjectRef {
 
 /// The kind of one Page/PageExtension layout control, from its raw grammar
 /// section keyword (`part` / `systempart` / `usercontrol`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PageControlKind {
     Part,
     SystemPart,
@@ -63,7 +64,7 @@ pub enum PageControlKind {
 /// Page/PageExtension, in document order. Consumed by Task 7's Step 0 in
 /// `infer_receiver_type` to resolve `CurrPage.<part>.Page` subpage-instance
 /// receivers (beyond-1B.3b).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PageControlNode {
     pub name_lc: String,
     pub kind: PageControlKind,
@@ -80,7 +81,7 @@ pub struct PageControlNode {
 /// same fail-closed call sites Page/PageExtension/Codeunit already use, never
 /// pre-resolved here (keeps `ObjectNode` topology-independent, matching every
 /// other `*Ref` field on this struct).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataitemNode {
     pub name_lc: String,
     pub name: String,
@@ -102,13 +103,13 @@ pub struct DataitemNode {
 /// possibly-diverging path (e.g. `FieldDecl::is_blob_like`, which also flags
 /// Media/MediaSet and would falsely broaden a Media field into the Blob
 /// catalog if used for classification instead of the declared text).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldNode {
     pub name_lc: String,
     pub type_text: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectNode {
     pub id: ObjectNodeId,
     pub name: String,
@@ -175,7 +176,7 @@ pub struct ObjectNode {
 /// table, even when `type_text` itself degraded to the bare outer keyword
 /// (see [`crate::engine::deps::symbol_reference::AbiParameter::type_text`]'s
 /// "BARE-OUTER-NAME FALLBACK" doc).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AbiParamRetained {
     pub type_text: String,
     pub is_var: bool,
@@ -193,7 +194,7 @@ pub struct AbiParamRetained {
 /// [`AbiParams::Complete`] — every other variant is a clean "no metadata",
 /// degrading the WHOLE call per that module's cardinal rule (never a partial
 /// read, never a guess).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AbiParams {
     /// A genuinely-parsed, trustworthy parameter list (possibly empty, for a
     /// true 0-arg ABI routine) — the ONLY variant
@@ -220,7 +221,7 @@ pub enum AbiParams {
     CollapsedUntrusted,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutineNode {
     pub id: RoutineNodeId,
     pub name: String,
@@ -681,6 +682,78 @@ mod tests {
     use super::*;
     use crate::program::node::{AppRef, ObjKey};
     use crate::snapshot::TrustTier;
+
+    #[test]
+    fn routine_node_survives_a_json_round_trip_with_every_field_populated() {
+        let node = RoutineNode {
+            id: RoutineNodeId {
+                object: ObjectNodeId {
+                    app: crate::program::node::AppRef(7),
+                    kind: al_syntax::ir::ObjectKind::Codeunit,
+                    key: crate::program::node::ObjKey::Id(50100),
+                },
+                name_lc: "doThing".to_ascii_lowercase(),
+                enclosing_member_lc: Some("no.".to_string()),
+                params_count: 2,
+                sig_fp: 0xDEAD_BEEF_CAFE_F00D,
+            },
+            name: "DoThing".to_string(),
+            is_trigger: false,
+            access: Access::Internal,
+            tier: TrustTier::EmbeddedSource,
+            event_subscribers: vec![],
+            subscriber_instance_manual: true,
+            publisher_kind: None,
+            include_sender: Some(false),
+            abi_routine_kind: None,
+            abi_event_kind: None,
+            param_sig_key: "integer|code[20]".to_string(),
+            return_type: Some("Codeunit \"Sales-Post\"".to_string()),
+            return_type_id: Some(("Sales-Post".to_string(), 80)),
+            abi_overload_collapsed: false,
+            source_overload_aliased: true,
+            abi_params: AbiParams::Complete(vec![AbiParamRetained {
+                type_text: "Record".to_string(),
+                is_var: true,
+                subtype_id: Some(18),
+                subtype_raw_name: Some("Customer".to_string()),
+                subtype_tag: SubtypeTag::Full,
+            }]),
+        };
+
+        let json = serde_json::to_string(&node).expect("serialize");
+        let back: RoutineNode = serde_json::from_str(&json).expect("deserialize");
+
+        // sig_fp specifically: it spans the full u64 range and JSON numbers are
+        // IEEE-754 doubles, exact only to 2^53. RoutineNodeId already routes it
+        // through a decimal string for this reason; assert the value survives.
+        //
+        // A pure-Rust round trip through `serde_json` cannot by itself prove this:
+        // `serde_json` parses an unquoted JSON integer literal exactly into a typed
+        // `u64` field regardless of magnitude, so a round-trip-only assertion is
+        // blind to whether `sig_fp` went over the wire as a JSON number or a JSON
+        // string (discrimination proof, Task 4 Step 6 — the value-only assertion
+        // below came back GREEN even after deleting `#[serde(with =
+        // "sig_fp_as_string")]` and even at `u64::MAX`). The actual hazard this
+        // field's `serde(with = ...)` guards against is a NON-Rust consumer (a
+        // JS-based LSP client's `JSON.parse`) decoding a bare JSON number as an
+        // IEEE-754 double — so the only assertion that can discriminate on THAT
+        // hazard is one that inspects the WIRE SHAPE directly: sig_fp must appear
+        // as a quoted JSON string, never a bare number.
+        assert!(
+            json.contains("\"sig_fp\":\"16045690984503111693\""),
+            "sig_fp must serialize as a quoted JSON string (decimal, lossless for \
+             non-Rust consumers), not a bare JSON number; got: {json}"
+        );
+        assert_eq!(back.id.sig_fp, 0xDEAD_BEEF_CAFE_F00D);
+        assert_eq!(back.id, node.id);
+        assert_eq!(back.name, node.name);
+        assert_eq!(back.param_sig_key, node.param_sig_key);
+        assert_eq!(back.return_type_id, node.return_type_id);
+        assert_eq!(back.abi_params, node.abi_params);
+        assert_eq!(back.tier, node.tier);
+        assert_eq!(back.access, node.access);
+    }
 
     #[test]
     fn extracts_object_and_routines_with_access() {

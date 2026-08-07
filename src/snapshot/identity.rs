@@ -1,5 +1,7 @@
 //! Stable app identity + provenance/trust tiers for the app-set snapshot.
 
+use serde::{Deserialize, Serialize};
+
 /// Identity of an AL app, matching `app.json` / SymbolReference fields.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AppId {
@@ -21,7 +23,7 @@ impl AppId {
 /// `Hash`/`PartialOrd`/`Ord` (resolve-reason-split Task 2 addition): needed so
 /// [`crate::program::resolve::edge::Route`]'s `receiver_tier: Option<TrustTier>`
 /// diagnostic field can ride `Route`'s existing derived `Hash`/`Ord` stack.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum TrustTier {
     Workspace,
     EmbeddedSource,

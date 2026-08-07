@@ -8,6 +8,7 @@
 
 use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AttributeIr, ExprId, ExprKind, Ir, Literal, ObjectDecl, RoutineDecl};
+use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Subscriber argument parsing
@@ -16,7 +17,7 @@ use al_syntax::ir::{AttributeIr, ExprId, ExprKind, Ir, Literal, ObjectDecl, Rout
 /// Typed result of parsing an `[EventSubscriber(…)]` attribute's positional args.
 ///
 /// All string fields are lowercased and unquoted.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedSubscriberArgs {
     /// Publisher object type, lowercased (e.g. `"codeunit"`).
     pub publisher_object_type: String,
@@ -143,7 +144,7 @@ fn strip_al_string(s: &str) -> &str {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The event-publisher kind encoded by a routine's attribute.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum PublisherKind {
     Integration,
     Business,
