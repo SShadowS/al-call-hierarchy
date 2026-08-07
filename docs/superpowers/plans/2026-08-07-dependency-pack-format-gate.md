@@ -44,7 +44,9 @@
 | `src/snapshot/identity.rs` | serde derives on `TrustTier` | Modify |
 | `crates/al-syntax/src/ir/mod.rs` | delete the dead `Origin.ts_id` field | Modify |
 | `crates/al-syntax/src/lower/mod.rs` | drop the single `ts_id` write site | Modify |
-| `src/program/pack/mod.rs` | **new** — `DepPack` type, encode, decode, integrity checks | Create |
+| `src/program/pack/mod.rs` | **new** — `DepPack`/`PackedFile`/`PackedOrigin`, encode, decode, integrity checks | Create |
+| `src/program/resolve/decl_surface.rs` | serde on `RoutineMeta` / `ParamMeta` | Modify |
+| `crates/al-syntax/src/raw/generated/raw_kind.rs` | `try_from_raw` — fallible sibling of the panicking `from_raw` | Modify (generated — see Task 5) |
 | `benches/dep_pack_roundtrip.rs` | **new** — the measurement gate | Create |
 | `CLAUDE.md` | three doc corrections | Modify |
 | `src/program/resolve/preflight_cache.rs` | one doc correction | Modify |
@@ -690,19 +692,38 @@ A self-contained module that turns one dependency app's extraction output into b
 - Create: `src/program/pack/mod.rs`
 - Modify: `src/program/mod.rs` (add `pub mod pack;`)
 - Modify: `Cargo.toml` (add `postcard`)
+- Modify: `src/program/resolve/decl_surface.rs` — `Serialize, Deserialize` on `RoutineMeta` and `ParamMeta`
+- Modify: `crates/al-syntax/src/raw/generated/raw_kind.rs` — add `try_from_raw`. **This file is GENERATED** (`cargo run -p xtask -- gen-syntax`); check whether the generator must emit `try_from_raw` instead of hand-editing, and if so change the generator. Report which you did and why.
 - Test: `src/program/pack/mod.rs` (inline `mod tests`)
+
+**The `Origin.kind_text` problem, and the design that solves it.** `RoutineMeta` carries two `Origin`s, and `Origin.kind_text` is `&'static str` (`crates/al-syntax/src/ir/mod.rs:38`) — which cannot implement `Deserialize`, the same blocker class Task 3 hit with `subtype_tag`.
+
+Three rejected options and why, so they are not re-proposed:
+
+- **`Origin.kind_text: RawKind` directly** — unsafe. `kind_str()` returns tree-sitter's raw string for ANY node, named or anonymous (`raw/node.rs:30-32`), while `RawKind::from_raw` covers only the 388 named kinds plus `ERROR` and **panics** on anything else (`raw_kind.rs:801-805`; `NAMED_KIND_COUNT` pinned at 388 in `raw/mod.rs:32`). Nothing type-level guarantees `origin_of` is only called on named nodes.
+- **`kind_text: String`** — ~253k extra allocations per load (126,640 routines × 2 `Origin`s), paid on every warm run forever, to encode a value from a closed 389-member set. That is the precise cost the gate exists to price.
+- **Omit `kind_text` from the pack** — `ir/mod.rs:38` documents a live consumer: it is "fed verbatim to anchor `syntax_kind` (parity)", and `syntax_kind: String` is real (`src/engine/deps/dep_artifact_l4.rs:944`). Making `RoutineMeta` lossy on an unaudited field trades a small known cost for an unbounded correctness audit.
+
+**Do this instead:** leave `Origin` unchanged in the IR (its `&'static str` is load-bearing for the parity contract). Add a wire codec that encodes `kind_text` through a new **fallible** `RawKind::try_from_raw`, and decodes via `RawKind::as_str()` (`raw_kind.rs:809`) — which returns `&'static str`, so `Deserialize` is satisfied with **zero allocations** and the wire carries a varint. An encode-side `None` means the app is simply not packed (`PackError::Codec`), which is cold-path and fail-closed, mirroring spec §9. Never panic, and never fail on the read path.
 
 **Interfaces:**
 - Consumes: `ObjectNode`, `RoutineNode` with serde from Task 4.
 - Produces:
   - `pub struct DepPack { pub schema: u32, pub app_guid: String, pub app_name: String, pub app_publisher: String, pub app_version: String, pub files: Vec<PackedFile>, pub self_hash: String }`
-  - `pub struct PackedFile { pub virtual_path: String, pub parse_status_recovered: bool, pub objects: Vec<ObjectNode>, pub routines: Vec<RoutineNode> }`
+  - `pub struct PackedFile { pub virtual_path: String, pub parse_status_recovered: bool, pub objects: Vec<ObjectNode>, pub routines: Vec<RoutineNode>, pub routine_meta: Vec<(RoutineNodeId, RoutineMeta)> }`
+  - `pub fn try_from_raw(s: &str) -> Option<RawKind>` on `RawKind` in `crates/al-syntax/src/raw/generated/raw_kind.rs` — a NON-panicking sibling of `from_raw`
+  - a serde codec for `Origin` (see Step 4a) encoding `kind_text` as a `RawKind` discriminant
   - `pub fn encode(pack: &DepPack) -> Result<Vec<u8>, PackError>`
   - `pub fn decode(bytes: &[u8]) -> Result<DepPack, PackError>`
   - `pub enum PackError { Codec(String), SchemaMismatch { found: u32, expected: u32 }, SelfHashMismatch }`
   - `pub const PACK_SCHEMA: u32 = 1;`
 
-`RoutineMeta` is deliberately NOT in `PackedFile` yet — it lives in `src/program/resolve/decl_surface.rs` and wiring it is spec step 5. Task 6 measures the node population, which is the 126,640-record cost the gate is about. Note this omission in the measurement ledger so the number is not read as covering more than it does.
+**`RoutineMeta` IS in `PackedFile`.** An earlier revision of this plan deferred it to spec step 5 and told Task 6 to *estimate* its cost. That was wrong twice over:
+
+- **It is not derivable on a hit.** `RoutineMeta::from_decl` consumes a `RoutineDecl` (`decl_surface.rs:43`), and `DeclSurface::build`/`build_split` obtain those by iterating `ParsedUnit`s (`decl_surface.rs:78-98`, `:115-146`) — which do not exist on a pack hit. Spec §4 says verbatim: "Packs persist nodes **and `RoutineMeta`**." Nothing in `RoutineNode` can reconstruct `virtual_path`, the two `Origin`s, or per-param `ty`/`by_ref`.
+- **It is the exact cost class the gate exists to price.** Per routine it adds 1–3 heap `String`s, a `Vec<ParamMeta>` each with an `Option<String>`, and two `Origin`s. At 126,640 routines that is on the order of 400–600k extra allocations plus UTF-8 validation on every string — precisely what spec §13 identifies as separating decode cost from the clone analogy it rejected.
+
+A gate that omits it is not a gate. It would be a lower bound requiring a re-run after the seam lands, and this plan's Goal states the question is "answered by measurement rather than prediction" — an estimate to complete the number contradicts that directly.
 
 - [ ] **Step 1: Add the dependency**
 
@@ -913,13 +934,80 @@ Register the module in `src/program/mod.rs`:
 pub mod pack;
 ```
 
+- [ ] **Step 4a: Add `try_from_raw` and the `Origin` wire codec**
+
+In `raw_kind.rs`, beside `from_raw`, add the non-panicking sibling. If the file is generated, change the generator and regenerate rather than hand-editing:
+
+```rust
+/// Fallible sibling of [`Self::from_raw`]. Returns `None` for an anonymous
+/// token kind or an unknown string, where `from_raw` panics. Exists so a
+/// persistence layer can FAIL TO STORE rather than crash on a kind it cannot
+/// encode — see `src/program/pack`'s Origin codec.
+pub fn try_from_raw(s: &str) -> Option<RawKind> { /* same match, `other => None` */ }
+```
+
+In `src/program/pack/mod.rs`, add the codec. `PackedOrigin` is the wire shape; conversion is fallible on encode, infallible on decode:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackedOrigin {
+    /// `kind_text` as a closed-set discriminant. A varint on the wire, and
+    /// `RawKind::as_str()` gives back a `&'static str` on load — so decoding an
+    /// Origin allocates NOTHING, which is the whole point (see this module's doc).
+    pub kind: RawKind,
+    pub byte_start: usize,
+    pub byte_end: usize,
+    pub start: (u32, u32),
+    pub end: (u32, u32),
+}
+
+impl PackedOrigin {
+    /// `None` when `kind_text` is not a named grammar kind — the app is then not
+    /// packed. Cold path, fail-closed, never a panic.
+    pub fn try_from_origin(o: &al_syntax::ir::Origin) -> Option<Self> { /* ... */ }
+    pub fn into_origin(self) -> al_syntax::ir::Origin { /* kind.as_str() */ }
+}
+```
+
+- [ ] **Step 4b: Write the corpus test that turns "plausibly always named" into a guarantee**
+
+The design assumes every `RoutineDecl.origin`/`name_origin` carries a NAMED kind. Prove it rather than assuming it:
+
+```rust
+#[test]
+fn every_decl_origin_kind_is_a_named_grammar_kind() {
+    // Lower a real fixture corpus and assert both Origins on every routine decl
+    // survive try_from_raw. If this ever fails, the encoder's None arm is live
+    // and that app silently stops being packable -- which is safe, but we want
+    // to KNOW, not discover it as a mystery cache-miss rate.
+    let mut checked = 0usize;
+    for path in fixture_al_files() {
+        let file = al_syntax::parse(&std::fs::read_to_string(&path).unwrap());
+        for obj in &file.objects {
+            for r in &obj.routines {
+                assert!(RawKind::try_from_raw(r.origin.kind_text).is_some(),
+                    "{}: routine {} origin kind {:?} is not a named grammar kind",
+                    path.display(), r.name, r.origin.kind_text);
+                assert!(RawKind::try_from_raw(r.name_origin.kind_text).is_some(),
+                    "{}: routine {} name_origin kind {:?} is not a named grammar kind",
+                    path.display(), r.name, r.name_origin.kind_text);
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0, "the corpus produced no routines -- the test proved nothing");
+}
+```
+
+The final assertion is not decoration: a corpus that yields zero routines would make every other assertion vacuously true. Point `fixture_al_files()` at an existing fixture directory (`tests/r0-corpus/` or `tests/fixtures/`); do not invent new fixtures.
+
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
 cargo test -p al-call-hierarchy --lib pack::
 ```
 
-Expected: 3 passed.
+Expected: all pack tests pass, including the corpus test with a non-zero `checked` count.
 
 - [ ] **Step 6: Prove the corruption test discriminates**
 
@@ -976,9 +1064,18 @@ App identity is stored symbolically because AppRef is a per-run interning
 index. Per-file order is preserved because dedup keeps the first
 occurrence per key, so a reordered pack changes which survivor wins.
 
-RoutineMeta is not carried yet -- it lives in decl_surface.rs and wiring it
-is step 5. The measurement ledger records this so the number is not read as
-covering it.
+RoutineMeta IS carried. It is not derivable on a pack hit (from_decl needs a
+RoutineDecl, and the parsed units do not exist), and it is the cost class the
+gate exists to price, so a pack without it would make the gate a lower bound
+rather than a decision.
+
+Origin.kind_text is &'static str and cannot deserialize. Rather than changing
+the IR type, widening it to String, or dropping it, the wire encodes it as a
+RawKind discriminant via a new fallible try_from_raw; decode goes through
+as_str(), which returns &'static str, so loading an Origin allocates nothing.
+An unencodable kind means the app is not packed -- cold path, fail-closed,
+never a panic.
+
 EOF
 ```
 
@@ -1178,15 +1275,19 @@ Use `release-fast` per the build guidance — full `--release` is for the SHA-pi
 
 - [ ] **Step 4: Record the ledger**
 
-Create `docs/2026-08-07-dep-pack-gate-measurement.md` with, at minimum: the workspace used and its object/routine counts, the artifact size in MB, all three round timings, the machine and profile, and the verdict. State explicitly that `RoutineMeta` is NOT yet in the pack, so the real hit-path cost will exceed this number — and estimate by how much from the `RoutineMeta` field count relative to `RoutineNode`'s.
+Create `docs/2026-08-07-dep-pack-gate-measurement.md` with, at minimum: the workspace used and its object/routine/`RoutineMeta` counts, the artifact size in MB, all three round timings, the machine and profile, and the verdict.
+
+State explicitly what the pack DOES contain — nodes plus `RoutineMeta`, i.e. the full spec §6 payload apart from the per-file `ParseStatus`/recovered paths, which are a bool and a path list and cannot move the number. The point of saying so is that a reader must be able to tell whether the measurement covers the real hit path. It does.
 
 Do not round in the favourable direction and do not report a single round.
 
 - [ ] **Step 5: Take the decision**
 
 - **Under ~200 ms:** verdict PROCEED. The next plan implements spec steps 4, 5, 6 against this format.
-- **Between 200 and 600 ms:** verdict PROCEED WITH NOTE, unless `RoutineMeta`'s estimated addition pushes it past 600. Record the reasoning; a 300 ms load against ~1,280 ms saved is still a net win.
+- **Between 200 and 600 ms:** verdict PROCEED WITH NOTE. Record the reasoning; a 300 ms load against ~1,280 ms saved is still a net win.
 - **Approaching ~600 ms:** verdict SWITCH. The next plan implements the shared string table format described in spec §13 and re-runs this gate before anything else.
+
+**Take the verdict from the measured number only.** An earlier revision of this step said "unless `RoutineMeta`'s estimated addition pushes it past 600" — an estimate, in a plan whose Goal is to answer this by measurement rather than prediction. `RoutineMeta` is now IN the pack (Task 5), so the measured number is the whole payload and there is nothing left to estimate. If you find yourself wanting to adjust the measured figure by a guess, the gate has been built wrong — stop and say so.
 
 - [ ] **Step 6: Update the CHANGELOG and commit**
 
