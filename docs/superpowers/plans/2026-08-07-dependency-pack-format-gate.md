@@ -484,20 +484,30 @@ EOF
 
 Already carrying serde and needing no change: `AppRef` and `ObjKey` (`src/program/node.rs:9-10`, `:75-76`), `RoutineNodeId` and `ObjectNodeId` (`node.rs:117-122`, `:173-174`, the latter via the `sig_fp_as_string` helper and `ObjectKindDef` remote derive).
 
-- [ ] **Step 1: Enumerate what is missing**
+- [ ] **Step 1: Let the compiler enumerate the closure — do not work from a list**
+
+**Read this before starting.** Earlier tasks in this plan shipped three separate list-based enumerations that were all wrong: a file list that named 3 files where 9 were required, a value set that named 5 variants where 8 existed, and a name-based grep that resolved two type names to the wrong definitions. Name-matching does not trace reachability. The compiler does.
+
+So the list below is a **starting hint, explicitly not authoritative**:
+
+> `ObjectRef`, `PageControlKind`, `PageControlNode`, `DataitemNode`, `FieldNode`, `ObjectNode`, `AbiParamRetained`, `AbiParams`, `Access`, `RoutineNode`, `ParsedSubscriberArgs`, `PublisherKind`, `AbiRoutineKind`, `AbiEventKind`, `TrustTier`, `SubtypeTag`
+
+**Two known traps, both of which a grep by name gets wrong:**
+
+- `PageControlKind` has two definitions — `src/program/node_extract.rs:54` and `src/engine/l3/l3_workspace.rs:116`. Only the first is reachable from `ObjectNode`.
+- `AbiEventKind` likewise has two — `src/program/resolve/edge.rs` and `src/engine/deps/symbol_reference.rs`. Follow `RoutineNode::abi_event_kind`'s actual type to see which.
+- `ObjectKind` needs **nothing**: `ObjectNodeId` already routes it through a `#[serde(with = "ObjectKindDef")]` remote derive (`src/program/node.rs:117-122`).
+
+**The method:** add `Serialize, Deserialize` to `ObjectNode` and `RoutineNode` first, then run
 
 ```bash
 cd U:/Git/al-call-hierarchy
-for t in ObjectRef PageControlKind PageControlNode DataitemNode FieldNode ObjectNode \
-         AbiParamRetained AbiParams Access RoutineNode ParsedSubscriberArgs \
-         PublisherKind AbiRoutineKind AbiEventKind TrustTier SubtypeTag; do
-  printf '%-22s ' "$t"
-  grep -rn "^pub \(struct\|enum\) $t\b" -B 2 --include=*.rs src/ \
-    | grep -c 'Serialize' || true
-done
+cargo check --all-targets 2>&1 | grep -E "^error|the trait bound" | head -40
 ```
 
-Any type printing `0` needs derives added. Note `PageControlKind` and `AbiEventKind` each have **two** definitions in the tree (`node_extract.rs` / `l3_workspace.rs`, and `edge.rs` / `symbol_reference.rs`). Only the one reachable from `ObjectNode`/`RoutineNode` needs derives — confirm which by following the field type, not the name.
+Each error names the next type missing a derive. Add it, re-run, repeat until clean. **`cargo check --all-targets` is the completeness oracle** — `--all-targets` is load-bearing, because `tests/` files reference these types too and a `src/`-scoped search will never find them. Task 3 discovered three such files exactly this way.
+
+Record in your report the full list the compiler actually demanded, and call out explicitly any type the hint above missed or named wrongly.
 
 - [ ] **Step 2: Write the failing round-trip test**
 
