@@ -58,19 +58,37 @@ the varint.
 The wire is an envelope: `postcard(PackHeader { schema, self_hash })` followed by
 `postcard(DepPack)`, with `self_hash` `#[serde(skip)]` so the encoded pack IS the
 body the hash covers. `decode` therefore verifies with one blake3 pass over a slice
-it already holds instead of re-encoding what it just decoded, which was measured at
-33 % of decode (670 µs → 448 µs on a 1050-routine pack). Hashing the encoded bytes
-is also strictly stronger: corruption postcard itself rejects now fails the hash
-first rather than never reaching it, taking the share of single-bit flips caught by
-the integrity check from 299/322 to 5127/5200, with zero flips decoding to a wrong
-pack in either layout.
+it already holds instead of re-encoding what it just decoded. Measured on a
+1050-routine pack, release, median of 40: the re-encode was **33 % of the pre-fix
+decode** (670 µs → 448 µs, both with `sig_fp` still a decimal string, so the two
+builds differ only in the envelope). Hashing the encoded bytes is also strictly
+stronger: corruption postcard itself rejects now fails the hash first rather than
+never reaching it, taking the share of single-bit flips caught by the integrity
+check from 299/322 to 5127/5200, with zero flips decoding to a wrong pack in either
+layout.
+
+`schema` is on the wire TWICE — in the header, so an incompatible format is rejected
+before the body is parsed or hashed, and in the body, where the hash authenticates
+it. `decode` compares them. The header copy alone would be unauthenticated, which has
+a concrete window once a second version exists: a flip turning a future pack's header
+from `2` into `1` passes the header check and passes the body hash (which does not
+cover the header), and the v2 body would be parsed as v1. One byte buys an enforced
+invariant instead of an assumed one.
 
 `RoutineNodeId.sig_fp`'s decimal-string encoding is now gated on
 `is_human_readable()`. It exists for JavaScript LSP clients (JSON numbers are exact
 only to 2^53) and is load-bearing THERE, but on the binary wire a `u64` is exact by
 construction, so the detour cost a `to_string` per encode and a `String` +
 `parse::<u64>()` per decode on every routine — ~253k allocations per load at the
-scale a pack is built for. The JSON contract is unchanged and still tested.
+scale a pack is built for. Off the ENVELOPE-ONLY build it takes a further 3 % off
+decode (448 µs → 434 µs) and 4.3 % off the wire (220,703 → 211,253 bytes). That wire
+figure is arithmetic, not a lone measurement, and it is fixture-specific: the
+harness gives every routine `sig_fp = 2^53 + 1`, which is 16 decimal digits (17
+postcard bytes, one length prefix plus the digits) against a 54-bit varint (8 bytes)
+— 9 bytes per routine × 1050 routines = 9,450 bytes, exactly the measured delta.
+Real fingerprints span the full `u64`, so the per-routine saving in production is
+larger (~20 digits against a 10-byte varint). The JSON contract is unchanged and
+still tested.
 
 ### Added - `RawKind::try_from_raw` and `RawKind::ALL` (generated)
 

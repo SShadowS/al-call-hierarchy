@@ -35,8 +35,10 @@ pub struct ParamMeta {
 ///
 /// The two `Origin`s route through `pack::origin_wire` rather than deriving:
 /// `Origin::kind_text` is a `&'static str` (load-bearing for anchor
-/// `syntax_kind` parity) and cannot `Deserialize`. The wire carries it as a
-/// `RawKind` discriminant, so decoding an `Origin` allocates nothing — see
+/// `syntax_kind` parity) and cannot `Deserialize`. On a BINARY format the wire
+/// carries it as a `RawKind` discriminant, so decoding an `Origin` allocates
+/// nothing; on a human-readable one it carries the grammar kind string, which
+/// is stable across grammar revisions where the positional index is not — see
 /// [`crate::program::pack::PackedOrigin`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineMeta {

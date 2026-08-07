@@ -154,10 +154,15 @@ impl std::error::Error for PackError {}
 /// from a closed 389-member set) or dropping it (an unaudited lossy field) were
 /// both rejected. `&'static str` cannot `Deserialize`; a `RawKind` can, and
 /// [`RawKind::as_str`] hands back a `&'static str` on the way out — so decoding
-/// an `Origin` allocates NOTHING and the wire carries a varint.
+/// an `Origin` allocates NOTHING on the binary path, where the wire carries a
+/// varint. On a human-readable format the wire carries the kind STRING instead
+/// (`raw_kind_wire`) — that path is for debugging, not for the gate, and
+/// stability matters there more than allocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackedOrigin {
-    /// `kind_text` as a closed-set discriminant.
+    /// `kind_text` as a closed-set discriminant: a varint index on a binary
+    /// format, the grammar kind string on a human-readable one — see
+    /// `raw_kind_wire`.
     #[serde(with = "raw_kind_wire")]
     pub kind: RawKind,
     pub byte_start: usize,
@@ -273,9 +278,16 @@ pub mod origin_wire {
 // Codec
 // ---------------------------------------------------------------------------
 
-/// The fixed-size prefix in front of the body. Read before the body is parsed,
-/// so a schema mismatch and a corrupt payload are both rejected without ever
+/// The prefix in front of the body, read before the body is parsed, so an
+/// incompatible format and a corrupt payload are both rejected without ever
 /// decoding the payload.
+///
+/// NOT fixed-size: `schema` is a postcard varint (1 byte at `PACK_SCHEMA` = 1,
+/// 2 bytes from 128), and `self_hash` is a length-prefixed string. Nothing may
+/// index into the file at a hardcoded offset.
+///
+/// **The header is OUTSIDE the hash**, which is why `schema` also stays on
+/// [`DepPack`] — see [`decode`] for the invariant that ties the two together.
 #[derive(Debug, Serialize, Deserialize)]
 struct PackHeader<'a> {
     schema: u32,
@@ -349,6 +361,24 @@ fn unencodable_origin_report(pack: &DepPack) -> String {
 ///
 /// Every abnormal state is an `Err`, never a partial `Ok` — the consumer in
 /// spec step 5 treats any `Err` as a cache miss and recomputes.
+///
+/// # Why `schema` is on the wire twice, and why both copies are checked
+///
+/// The HEADER copy exists so an incompatible format is rejected before the
+/// body is parsed or even hashed — that is what a header is for. But the
+/// header is outside the hash, so that copy is UNAUTHENTICATED. The BODY copy
+/// is inside the hash, so it is the authoritative one.
+///
+/// Dropping the body copy (header-only, one byte cheaper) would leave the only
+/// schema on the wire unauthenticated, and that has a concrete window once a
+/// second version exists: a flip turning a future pack's header from `2` into
+/// `1` passes the header check, passes the body hash (which does not cover the
+/// header), and gets a v2 body parsed as v1. Comparing the two closes it.
+///
+/// The redundancy is therefore an ENFORCED invariant rather than an assumption,
+/// which is the opposite of a maintenance hazard: `encode` always writes the
+/// two equal, and a pack where they disagree was written by a broken writer or
+/// had its header edited. Either way it is a miss.
 pub fn decode(bytes: &[u8]) -> Result<DepPack, PackError> {
     let (header, body) = postcard::take_from_bytes::<PackHeader>(bytes)
         .map_err(|e| PackError::Codec(e.to_string()))?;
@@ -365,6 +395,13 @@ pub fn decode(bytes: &[u8]) -> Result<DepPack, PackError> {
     }
     let mut pack: DepPack =
         postcard::from_bytes(body).map_err(|e| PackError::Codec(e.to_string()))?;
+    if pack.schema != header.schema {
+        return Err(PackError::Codec(format!(
+            "header schema {} disagrees with body schema {} — the pack was written by a \
+             broken writer, or its header was edited",
+            header.schema, pack.schema
+        )));
+    }
     // `self_hash` is `#[serde(skip)]` (it is the hash OF the body), so it
     // arrives defaulted and is restored from the header.
     pack.self_hash = header.self_hash.to_string();
@@ -552,9 +589,17 @@ mod tests {
     /// rather than an assumption.
     ///
     /// Under the pre-envelope layout the hash was checked AFTER the body was
-    /// decoded, so a corruption postcard rejected never reached it and
-    /// `identical`/`codec` carried a real share. Hashing the encoded body moved
-    /// that work: the hash now runs FIRST and catches everything in the body.
+    /// decoded, so a corruption postcard rejected never reached it and `codec`
+    /// carried a real share. (`identical` was 0 in both layouts.) Hashing the
+    /// encoded body moved that work: the hash now runs FIRST and catches
+    /// everything in the body.
+    ///
+    /// STATED LIMIT: this test cannot discriminate on WHICH slice is hashed.
+    /// Hashing the wrong slice (`&body[..0]`, say) makes every flip fail the
+    /// hash, so the partition still shows `leaked == 0` and `hash > 0` and this
+    /// test stays green. `encode_decode_round_trips` is the test that catches
+    /// it — an honest pack stops decoding — and the probe that proves so breaks
+    /// exactly that (fix round 1, R2).
     #[test]
     fn every_single_bit_corruption_is_rejected_and_the_hash_catches_most() {
         let mut pack = sample_pack();
@@ -584,6 +629,13 @@ mod tests {
             "corrupted packs decoded to a DIFFERENT pack with no guard firing, at \
              (byte, bit): {leaked:?}"
         );
+        // NOTE: this sum is a structural invariant of the LOOP, not a property
+        // of the code under test — the loop runs exactly `total` times and each
+        // arm increments exactly one counter, so it holds by construction and
+        // no change to `decode` can break it. It is kept (unlike the `ALL.len()`
+        // assertion, which a compile error already covered) because it DOES
+        // catch a future edit here that adds a match arm counting nothing, which
+        // would silently shrink the population without shrinking `total`.
         assert_eq!(hash + schema + codec + identical + leaked.len(), total);
         assert!(
             hash > 0,
@@ -597,6 +649,18 @@ mod tests {
         );
     }
 
+    /// STATED LIMIT: this test cannot discriminate the integrity check.
+    /// Deleting the `self_hash` comparison from [`decode`] leaves it GREEN,
+    /// because its `^= 0xFF` flip lands in UTF-8 string content and postcard's
+    /// own decoder rejects it — the test then passes through the `Codec` arm.
+    /// That is a real property of the code, not a broken test, so the test is
+    /// kept as the brief wrote it and the guard is pinned by
+    /// `every_single_bit_corruption_is_rejected_and_the_hash_catches_most`
+    /// instead, which enumerates the whole population and dies loudly (with
+    /// hundreds of leaks) when the check is removed.
+    ///
+    /// This limit was measured, not assumed, in both layouts: pre-envelope
+    /// (fix round 1, probe P1) and post-envelope (probe S3).
     #[test]
     fn a_corrupted_payload_is_rejected_not_misread() {
         let mut pack = sample_pack();
@@ -624,6 +688,47 @@ mod tests {
                 assert_eq!(expected, PACK_SCHEMA);
             }
             other => panic!("expected SchemaMismatch, got {other:?}"),
+        }
+    }
+
+    /// `schema` is on the wire twice — once in the header (fast, unhashed) and
+    /// once in the body (authenticated). `decode` must compare them, or the
+    /// only copy anyone checked would be the one the hash does not cover.
+    ///
+    /// Hand-stated precondition: `encode` cannot produce a pack whose two
+    /// copies disagree, so the fixture is FORGED — encode a schema-2 pack, then
+    /// patch the header's leading varint back to 1. That is exactly the
+    /// bit-flip this check exists for: it passes the header check, and passes
+    /// the body hash, because the hash does not cover the header.
+    #[test]
+    fn a_header_whose_schema_disagrees_with_the_body_is_rejected() {
+        let mut pack = sample_pack();
+        pack.schema = PACK_SCHEMA + 1;
+        pack.self_hash = compute_self_hash(&pack);
+        let mut bytes = encode(&pack).expect("encode");
+
+        // Precondition, asserted rather than assumed: byte 0 is the header's
+        // `schema` varint. If the layout changes this fails loudly instead of
+        // silently testing nothing.
+        assert_eq!(
+            bytes[0],
+            u8::try_from(PACK_SCHEMA + 1).unwrap(),
+            "fixture assumption: byte 0 is the header schema varint"
+        );
+        bytes[0] = u8::try_from(PACK_SCHEMA).unwrap();
+
+        match decode(&bytes) {
+            Err(PackError::Codec(msg)) => {
+                assert!(
+                    msg.contains("header schema") && msg.contains("body schema"),
+                    "the error must say the two copies disagree, got: {msg}"
+                );
+            }
+            other => panic!(
+                "a pack whose header says {PACK_SCHEMA} and whose body says {} must be \
+                 rejected, got {other:?}",
+                PACK_SCHEMA + 1
+            ),
         }
     }
 
