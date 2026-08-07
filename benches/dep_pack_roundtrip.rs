@@ -15,10 +15,14 @@
 //! the gate prices RECORD cost rather than per-file framing. That is a floor:
 //! spec §6 stores contributions per SOURCE FILE, so the real artifact carries
 //! one `virtual_path` string, one bool and three length prefixes per file —
-//! 11,856 of them on DO. Since the omission can only ADD cost, this bench
-//! builds and times BOTH shapes and the verdict is taken from the larger. That
-//! keeps the decision on measured ground: nothing here is adjusted by an
-//! estimate of what the framing "would have" cost.
+//! 10,800 dependency source files on DO, of which 7,416 become frames (the
+//! rest declare no routines and never bucket); see
+//! `docs/2026-08-07-dep-pack-gate-measurement.md` for the count and why it
+//! supersedes the unreproducible 11,856 an earlier sizing doc quoted. Since
+//! the omission can only ADD cost, this bench builds and times BOTH shapes
+//! and the verdict is taken from the larger. That keeps the decision on
+//! measured ground: nothing here is adjusted by an estimate of what the
+//! framing "would have" cost.
 //!
 //! The per-file grouping is reconstructed from `RoutineMeta::virtual_path`
 //! (the only path any of the three packed record types carries). Routines
@@ -526,7 +530,7 @@ fn measure(paths: &[PathBuf], packs: &[Vec<u8>], apps: &AppRegistry) -> Vec<f64>
     // substituting an estimate. Getting a genuinely cold round needs a read
     // that bypasses the cache manager — on Windows a `FILE_FLAG_NO_BUFFERING`
     // handle with sector-aligned buffers — which is the route if a future
-    // revision decides the sub-10 ms read share is worth unsafe FFI in a bench.
+    // revision decides the sub-13 ms read share is worth unsafe FFI in a bench.
     let io = pool.install(|| {
         let start = Instant::now();
         let bytes: usize = paths

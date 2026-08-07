@@ -61,11 +61,17 @@ body the hash covers. `decode` therefore verifies with one blake3 pass over a sl
 it already holds instead of re-encoding what it just decoded. Measured on a
 1050-routine pack, release, median of 40: the re-encode was **33 % of the pre-fix
 decode** (670 µs → 448 µs, both with `sig_fp` still a decimal string, so the two
-builds differ only in the envelope). Hashing the encoded bytes is also strictly
-stronger: corruption postcard itself rejects now fails the hash first rather than
-never reaching it, taking the share of single-bit flips caught by the integrity
-check from 299/322 to 5127/5200, with zero flips decoding to a wrong pack in either
-layout.
+builds differ only in the envelope; a debug build measured 44 %). Hashing the
+encoded bytes changes WHICH guard catches a corruption postcard itself rejects
+anyway — the hash fires first now, instead of never being reached — and a
+controlled before/after (identical 296,841-byte pack, identical 32,768 single-bit
+flips over the body's first 4 KiB, ordering the only variable) takes the self-hash
+share of that population from 24,735 (75.5 %) to all 32,768 (100 %), with zero
+flips decoding to a wrong pack in either ordering. (An earlier revision quoted
+299/322 → 5127/5200: directionally the same result, but not a controlled
+comparison — the fixture and the flip population both changed in the same commit
+as the ordering.) On all evidence gathered, both orderings reject the same
+corruption set — what moved is which check catches it, not the set's size.
 
 `schema` is on the wire TWICE — in the header, so an incompatible format is rejected
 before the body is parsed or hashed, and in the body, where the hash authenticates
@@ -85,10 +91,13 @@ decode (448 µs → 434 µs) and 4.3 % off the wire (220,703 → 211,253 bytes).
 figure is arithmetic, not a lone measurement, and it is fixture-specific: the
 harness gives every routine `sig_fp = 2^53 + 1`, which is 16 decimal digits (17
 postcard bytes, one length prefix plus the digits) against a 54-bit varint (8 bytes)
-— 9 bytes per routine × 1050 routines = 9,450 bytes, exactly the measured delta.
-Real fingerprints span the full `u64`, so the per-routine saving in production is
-larger (~20 digits against a 10-byte varint). The JSON contract is unchanged and
-still tested.
+— 9 bytes per encoded `RoutineNodeId` × 1050 routines = 9,450 bytes, exactly the
+measured delta on this harness pack. The harness predates `routine_meta` and so
+carries only ONE `RoutineNodeId` per routine (`RoutineNode.id`); a shipped pack
+carries two (the `routine_meta` key as well), so production saves roughly double
+the per-routine figure above, on top of real fingerprints spanning the full `u64`
+(~20 digits against a 10-byte varint). The JSON contract is unchanged and still
+tested.
 
 ### Added - `benches/dep_pack_roundtrip.rs`: the dependency pack format go/no-go gate
 

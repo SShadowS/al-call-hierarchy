@@ -136,7 +136,7 @@ Spec §6 lists what a pack must persist. Every item is in the measured payload e
 | key echo | **no** — the pack key is spec §7/step 4, not yet designed. A short string; it cannot move the number |
 | app identity, symbolically | yes — real guid / name / publisher / version per pack, re-interned in the timed rounds |
 | per file: virtual path | yes |
-| per file: `ParseStatus` | yes — as `PackedFile::parse_status_recovered` |
+| per file: `ParseStatus` | yes — as `PackedFile::parse_status_recovered`, on the wire and priced by every timed round; the bench hardcodes it `false` for every file in both shapes rather than reading a real per-file value, so the byte/time cost is exact but the value itself is synthetic |
 | per file: `ObjectNode` / `RoutineNode` | yes — all 10,662 and all 119,773 |
 | `DeclSurface` contribution, `RoutineMeta` per routine | yes — all 119,773 |
 | recovered-file paths | yes — derivable from the per-file bool above |

@@ -1376,7 +1376,7 @@ EOF
 | §17.5 per-file parser | Out of scope by design; spec keeps it a separate deliverable with its own measurement |
 | Step 2 serialization surface | Tasks 3 and 4 |
 | Step 3 measurement gate | Tasks 5 and 6 |
-| §6 pack contents | Task 5, partially — `RoutineMeta` deferred to step 5 and flagged in the ledger |
+| §6 pack contents | Task 5, in full — `RoutineMeta` IS carried (`PackedFile::routine_meta`); the fix round that reversed the earlier deferral is recorded in the ledger |
 | §13 gate shape and thresholds | Task 6 Steps 2, 3, 5 |
 
 **Gaps deliberately left, each with its reason stated in Scope:** spec step 1 (light snapshot, independently shippable, carries its own unresolved design question), steps 4–6 (contingent on Task 6's verdict).

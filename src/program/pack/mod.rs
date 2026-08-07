@@ -18,14 +18,19 @@
 //! The hash covers the BODY BYTES, so [`decode`] verifies with one blake3 pass
 //! over a slice it already holds — it never re-encodes. An earlier revision
 //! stored `self_hash` as a plain field and re-serialized the decoded pack to
-//! check it, which cost 44 % of decode and would have made the measurement in
-//! spec §13 unattributable: near the abandon threshold we could not have told a
-//! slow format from a re-encode we chose to pay. The hash VALUE is unchanged by
-//! the envelope (same fields, same order, same bytes), and so is this module's
-//! public interface.
+//! check it, which cost 44 % of decode in a DEBUG build (33 % in release — see
+//! CHANGELOG's `[Unreleased]` entry for the release figure) and would have
+//! made the measurement in spec §13 unattributable: near the abandon
+//! threshold we could not have told a slow format from a re-encode we chose
+//! to pay. The hash VALUE is unchanged by the envelope (same fields, same
+//! order, same bytes), and so is this module's public interface.
 //!
-//! Hashing the encoded bytes is also strictly stronger: a corruption postcard
-//! itself rejects now fails the hash first, instead of never reaching it.
+//! Hashing the encoded bytes changes WHICH guard catches a corruption
+//! postcard itself rejects anyway: the hash now fires first, instead of
+//! never being reached. On all evidence gathered, both orderings reject the
+//! same corruption set — what moved is which check catches it, not the
+//! set's size (see CHANGELOG's `[Unreleased]` entry for the controlled
+//! before/after).
 //!
 //! # Two things a reader should know
 //!
@@ -732,9 +737,9 @@ mod tests {
         }
     }
 
-    /// `self_hash` must cover every field of `DepPack`. The exhaustive
-    /// destructure in `compute_self_hash` makes a MISSING field a compile
-    /// error; this makes a field that IS hashed observably load-bearing.
+    /// `self_hash` is excluded structurally by `#[serde(skip)]`, so a field
+    /// added to `DepPack` is hashed automatically; this test makes a field
+    /// that IS hashed observably load-bearing.
     #[test]
     fn the_self_hash_covers_the_body_fields() {
         let base = sample_pack();
