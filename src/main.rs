@@ -14,7 +14,7 @@ mod watcher;
 // Task 17 (the LSP surface now runs entirely on `lsp::*`, see `lib.rs`'s doc
 // on that module). Re-export here so binary modules (server, watcher, etc.)
 // can keep referring to `crate::lsp::*` / ... without churn.
-pub use al_call_hierarchy::{
+pub use al_sem::{
     analysis, app_package, big_stack, config, dependencies, lsp, protocol, telemetry,
 };
 

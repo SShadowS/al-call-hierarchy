@@ -14,7 +14,7 @@
 //!   4. Cited evidence + order entries + return summaries are DEDUPED (unique keys)
 //!      and SORTED (by operationId / routineId).
 
-use al_call_hierarchy::engine::deps::dep_artifact_l4::{
+use al_sem::engine::deps::dep_artifact_l4::{
     ConsumerModel, DependencyArtifactL4, build_dep_artifact_l4, collect_cited_dep_evidence,
     collect_dep_order_index, inject_intra_app_call_edges, is_dep_order_index_stamp_fresh,
 };

@@ -27,8 +27,8 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
 use crate::regen;
 
@@ -135,7 +135,7 @@ fn detector_arg(names: &[&str]) -> String {
 
 /// Obtain the all-detectors CSV (all registered detectors in registry order).
 fn all_detector_csv() -> String {
-    use al_call_hierarchy::engine::l5::detectors::registered_detectors;
+    use al_sem::engine::l5::detectors::registered_detectors;
     registered_detectors()
         .into_iter()
         .map(|d| d.name)

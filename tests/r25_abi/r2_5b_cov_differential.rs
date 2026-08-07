@@ -46,9 +46,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::{
-    CrossAppL3, build_cross_app_l3_from_workspace,
-};
+use al_sem::engine::deps::cross_app_l3::{CrossAppL3, build_cross_app_l3_from_workspace};
 use serde_json::Value;
 
 use crate::regen;
@@ -343,7 +341,7 @@ fn differential_r2_5b_coverage_match_goldens() {
         let cross = build_cross_app_l3_from_workspace(&fixture_dir, R2_5B_MODEL_INSTANCE_ID);
         let projection = match &cross {
             Some(c) => c.project_coverage_disk(&fixture_dir),
-            None => al_call_hierarchy::engine::l3::coverage::AnalysisCoverage {
+            None => al_sem::engine::l3::coverage::AnalysisCoverage {
                 source_units_total: 0,
                 source_units_parsed: 0,
                 routines_total: 0,

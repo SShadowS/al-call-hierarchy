@@ -9,7 +9,7 @@
 //! PRECISION GUARD: a call-result whose function returns a PRIMITIVE scalar
 //! (`GetText(): Text`) must NEVER falsely resolve a bogus method on it — the
 //! receiver stays an honest `unknown` (no false resolution that masks a real hole).
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
 

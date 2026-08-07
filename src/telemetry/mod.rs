@@ -126,7 +126,7 @@ pub fn init(inputs: TelemetryInputs) -> TelemetryHandle {
     );
 
     log::info!(
-        "telemetry: enabled (anonymous, hashed). install_id={}. Disable: AL_CH_TELEMETRY=0 or telemetry.enabled=false in ~/.al-call-hierarchy/config.json",
+        "telemetry: enabled (anonymous, hashed). install_id={}. Disable: AL_SEM_TELEMETRY=0 or telemetry.enabled=false in ~/.al-sem/config.json",
         install_id
     );
 

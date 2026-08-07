@@ -36,12 +36,12 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::l3::call_resolver::{CallEdge, UnknownReason};
-use al_call_hierarchy::engine::l3::coverage::{
+use al_sem::engine::l3::call_resolver::{CallEdge, UnknownReason};
+use al_sem::engine::l3::coverage::{
     AnalysisCoverage, CoverageDiagnostic, CoverageUnit, build_coverage,
 };
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
-use al_call_hierarchy::engine::l3::taxonomy::{DispatchKind, Resolution};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve;
+use al_sem::engine::l3::taxonomy::{DispatchKind, Resolution};
 use serde_json::Value;
 
 const APP_GUID: &str = "2d000000-0000-0000-0000-0000000002dd";

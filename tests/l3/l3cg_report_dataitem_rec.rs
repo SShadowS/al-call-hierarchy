@@ -12,8 +12,8 @@
 //! at L2 as `PRecordOperation`, NOT `PCallSite`, so they never reach the call
 //! resolver — `TableCaption` IS a `PCallSite` and is in the catalog. (Same as
 //! `l3cg_implicit_rec_dispatch.rs`.)
-use al_call_hierarchy::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
 

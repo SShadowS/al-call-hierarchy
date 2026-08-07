@@ -1,9 +1,15 @@
 //! Telemetry enable/disable resolution.
 //!
 //! See spec §7 "Resolution order for `enabled`". Three tiers:
-//! hard-off (DNT, --no-telemetry, AL_CH_TELEMETRY=0),
-//! hard-on (AL_CH_TELEMETRY=1, init-option, config),
+//! hard-off (DNT, --no-telemetry, `AL_SEM_TELEMETRY`/`AL_CH_TELEMETRY`=0),
+//! hard-on (`AL_SEM_TELEMETRY`/`AL_CH_TELEMETRY`=1, init-option, config),
 //! defaults (off in debug/test/CI; on in release for interactive use).
+//!
+//! Two spellings of the switch are accepted. `AL_SEM_TELEMETRY` matches the crate name;
+//! `AL_CH_TELEMETRY` is the pre-rename name and keeps working, because a variable set in
+//! someone's shell profile or CI config is not ours to invalidate. Either one being `0`
+//! is enough to disable — the OFF reading always wins, so adding the new name can never
+//! turn telemetry ON for someone who had switched it off.
 
 use std::collections::HashMap;
 
@@ -57,6 +63,16 @@ const CI_ENV_VARS: &[&str] = &[
     "TF_BUILD",
 ];
 
+/// The telemetry switch, current name first. Both are honoured — see the module doc.
+pub const TELEMETRY_ENV_VARS: &[&str] = &["AL_SEM_TELEMETRY", "AL_CH_TELEMETRY"];
+
+/// True when any accepted spelling of the switch is set to `value`.
+fn telemetry_env_is(inputs: &Inputs, value: &str) -> bool {
+    TELEMETRY_ENV_VARS
+        .iter()
+        .any(|k| inputs.env.get(*k).map(|s| s.as_str()) == Some(value))
+}
+
 pub fn decide(inputs: &Inputs) -> Decision {
     // Hard-off tier
     if inputs.env.get("DO_NOT_TRACK").map(|s| s.as_str()) == Some("1") {
@@ -65,12 +81,14 @@ pub fn decide(inputs: &Inputs) -> Decision {
     if inputs.cli_no_telemetry {
         return Decision::Disabled(DisabledReason::CliFlag);
     }
-    if inputs.env.get("AL_CH_TELEMETRY").map(|s| s.as_str()) == Some("0") {
+    // Checked before the hard-on tier below, so a `0` under either spelling beats a `1`
+    // under the other.
+    if telemetry_env_is(inputs, "0") {
         return Decision::Disabled(DisabledReason::EnvOff);
     }
 
     // Hard-on tier
-    if inputs.env.get("AL_CH_TELEMETRY").map(|s| s.as_str()) == Some("1") {
+    if telemetry_env_is(inputs, "1") {
         return Decision::Enabled;
     }
     if let Some(true) = inputs.init_option {
@@ -146,14 +164,50 @@ mod tests {
 
     #[test]
     fn env_zero_disables() {
-        let i = with_env(&[("AL_CH_TELEMETRY", "0")]);
+        let i = with_env(&[("AL_SEM_TELEMETRY", "0")]);
         assert_eq!(decide(&i), Decision::Disabled(DisabledReason::EnvOff));
     }
 
     #[test]
     fn env_one_overrides_ci_default() {
+        let i = with_env(&[("CI", "true"), ("AL_SEM_TELEMETRY", "1")]);
+        assert_eq!(decide(&i), Decision::Enabled);
+    }
+
+    // The pre-rename spelling is a promise to anyone who already set it. Each test below
+    // states the env map literally rather than asking `TELEMETRY_ENV_VARS` for a name,
+    // so shortening that list to one entry fails these instead of silently passing.
+
+    #[test]
+    fn the_pre_rename_env_var_still_disables() {
+        let i = with_env(&[("AL_CH_TELEMETRY", "0")]);
+        assert_eq!(
+            decide(&i),
+            Decision::Disabled(DisabledReason::EnvOff),
+            "AL_CH_TELEMETRY=0 in a shell profile must keep working after the rename"
+        );
+    }
+
+    #[test]
+    fn the_pre_rename_env_var_still_enables() {
         let i = with_env(&[("CI", "true"), ("AL_CH_TELEMETRY", "1")]);
         assert_eq!(decide(&i), Decision::Enabled);
+    }
+
+    #[test]
+    fn off_under_either_spelling_beats_on_under_the_other() {
+        let off_is_new = with_env(&[("AL_SEM_TELEMETRY", "0"), ("AL_CH_TELEMETRY", "1")]);
+        let off_is_old = with_env(&[("AL_SEM_TELEMETRY", "1"), ("AL_CH_TELEMETRY", "0")]);
+        assert_eq!(
+            decide(&off_is_new),
+            Decision::Disabled(DisabledReason::EnvOff),
+            "adding a second accepted name must never turn telemetry on for someone who \
+             had switched it off"
+        );
+        assert_eq!(
+            decide(&off_is_old),
+            Decision::Disabled(DisabledReason::EnvOff)
+        );
     }
 
     #[test]

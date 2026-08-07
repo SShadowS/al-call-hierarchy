@@ -33,13 +33,13 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace;
-use al_call_hierarchy::engine::l5::fingerprint_cli::{
+use al_sem::engine::gate::model_instance_id::compute_gate_model_instance_id;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace;
+use al_sem::engine::l5::fingerprint_cli::{
     FingerprintFormat, FingerprintOptions, FingerprintOutput, ShardMode, run_fingerprint_pipeline,
 };
-use al_call_hierarchy::engine::l5::fingerprint_query::WitnessLimit;
-use al_call_hierarchy::engine::l5::snapshot_full::{
+use al_sem::engine::l5::fingerprint_query::WitnessLimit;
+use al_sem::engine::l5::snapshot_full::{
     FullSnapshotOptions, compose_full_snapshot, serialize_cbor, serialize_cbor_gz,
     serialize_sharded,
 };
@@ -127,8 +127,8 @@ fn first_diff(a: &[u8], b: &[u8]) -> Option<usize> {
 fn compose_full_for(
     fixture: &str,
 ) -> (
-    al_call_hierarchy::engine::gate::cbor::CborValue,
-    al_call_hierarchy::engine::l3::l3_workspace::L3Resolved,
+    al_sem::engine::gate::cbor::CborValue,
+    al_sem::engine::l3::l3_workspace::L3Resolved,
     PathBuf,
 ) {
     let ws = fixture_dir(fixture);

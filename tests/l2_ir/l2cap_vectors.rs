@@ -18,8 +18,8 @@
 //!   - single file     = src/vec.al  →  sourceUnitId = "ws:src/vec.al"
 //!   - modelInstanceId = "r0"  (the witness `op*`/`cs*` id prefixes are `r0/<hash>/…`)
 
-use al_call_hierarchy::engine::l2::capability::extract_capabilities;
-use al_call_hierarchy::engine::l2::l2_workspace::project_named_routine;
+use al_sem::engine::l2::capability::extract_capabilities;
+use al_sem::engine::l2::l2_workspace::project_named_routine;
 use std::collections::BTreeMap;
 
 const APP_GUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";

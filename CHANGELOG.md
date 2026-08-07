@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - the crate is now `al-sem`, and four things deliberately keep the old name
+
+`al-call-hierarchy` named a CONSUMER, not the product. `src/lsp/` reads what
+`src/program/resolve/` produces; the analyzer, the impact queries and the dump tool read
+the same engine. The library is now **`al-sem`** (`al_sem` in `use` statements), which is
+also what the shipped analyzer binary and its `~/.al-sem/cache/` directory have always
+said — the rename REDUCES the number of names in play rather than adding one.
+
+Splitting the repo was considered and rejected. One change in the `al-syntax` lowerer moves
+golden families across nine test targets; today that is one commit and one
+`scripts/check-goldens` run, and across repos it would become a version-bump dance per
+lowerer change. The monorepo is also what licenses the "we control all downstream
+consumers" refactoring freedom this project relies on.
+
+**Four things still read `al-call-hierarchy`, each for a reason, and each will look like an
+oversight to a future tidier.** CLAUDE.md's Project Overview now carries this table so the
+next person does not "fix" them:
+
+- **The LSP server binary**, now an explicit `[[bin]]` rather than inherited from the
+  package name. `.github/workflows/build-and-deploy.yml` copies it into three
+  `claude-code-lsps/al-language-server-go*` packages and `al-language-server-python` spawns
+  it by name. `cargo build --bins` was run to confirm all five binaries keep their
+  filenames, because the release workflows reference `target/release/al-call-hierarchy`
+  directly.
+- **The wire strings**: the diagnostic `source`, `serverInfo.name`, the
+  `al-call-hierarchy.showReferences` command id, and the `al-call-hierarchy/*` custom
+  methods. An editor integration keys on these; LSP.md now states explicitly that nothing
+  on the wire changed.
+- **The App Insights service name** (`cloud_RoleName`), now a documented `SERVICE_NAME`
+  constant in `src/telemetry/exporter.rs` instead of two inline literals. It is the join
+  key for existing dashboards and saved queries, so renaming it would split every one of
+  them at the rename point for nothing a user can see.
+- **`ANON_SALT`** in `src/program/resolve/anon.rs` — frozen bytes, not a reference to the
+  crate name. Every committed anonymized golden was minted with them, so tidying the string
+  silently invalidates all of them. Its doc comment now says so.
+
+### Added - `src/state_paths.rs`: per-user state converges on `~/.al-sem/`, with a read-fallback that carries pre-rename installs
+
+The LSP server kept its state in `~/.al-call-hierarchy/` (config, installation id, session
+marker) while the analyzer used `~/.al-sem/cache/`. Both now live under `~/.al-sem/`, and
+the per-workspace override is `.al-sem.json`.
+
+**The rule is write-current, read-current-then-legacy**, in one module rather than in each
+consumer. An install that predates the rename keeps its thresholds instead of silently
+reverting to defaults — the failure mode that makes a rename look like a config bug.
+`resolve_for_read` returns the CURRENT path when neither file exists, so a "no config
+found" message names the path a user should create rather than the retired one.
+
+Three consumers, three different correct behaviours — the reason this is not one blanket
+fallback:
+
+- **Config** (`src/config.rs`) reads either location, writes nothing.
+- **The installation id** (`src/telemetry/install_id.rs`) reads the legacy salt and
+  MIGRATES it to the new path, so the anonymous identity survives; a fresh salt would make
+  one install look like two. The user's old file is left in place — deleting it to tidy up
+  our own rename is not this code's business.
+- **The session marker** (`src/telemetry/session_marker.rs`) treats a legacy marker as what
+  it is, an unclean previous session, then REMOVES it. Nothing is migrated: the marker's
+  whole meaning is "the previous session of this install", so once consumed it has no
+  further use, and leaving it would report the same crash forever.
+
+`AL_SEM_TELEMETRY` joins `AL_CH_TELEMETRY` as the telemetry switch (`TELEMETRY_ENV_VARS`,
+current name first). The OFF reading is checked before the ON tier, so adding a second
+accepted spelling can never turn telemetry on for someone who had switched it off — a
+variable already sitting in a shell profile or CI config is not ours to invalidate.
+
+**Every one of these guards was proven to discriminate** — break the code, watch the test
+fail, revert, watch it pass, with the scripted break asserted to have applied (an
+unasserted break proves nothing, and its green run reads exactly like a passing test).
+Five breaks, five proofs: legacy path ignored (3 tests fail), legacy checked before current
+(3 fail), salt migration dropped (1 fails), legacy marker ignored (1 fails), env-var list
+shortened to one entry (3 fail). Each test states its precondition literally — a file
+written by the test, a `KNOWN_SALT` constant — rather than asking production code to
+produce it, so none of them can be invalidated by a later change to how those paths are
+computed.
+
+One pre-existing test was rewritten rather than repointed. `config::tests::
+test_global_config_path` asserted the exact old path; under a fallback the answer depends
+on what exists in the real `$HOME` of whoever runs the suite, so it now pins what is
+machine-independent — the file is always `config.json` and its parent is always one of the
+two sanctioned state directories — and leaves the choice between them to the hermetic
+`state_paths` tests. `docs/telemetry.md` also said the salt lives at `install-id`; the code
+has always written `installation-id`.
+
+Gates: `cargo test` green, `scripts/ci-steps clippy` green, `scripts/check-goldens` green
+with no golden moved (the rename touches no golden bytes — `driver_version` reads
+`CARGO_PKG_VERSION`, never the package NAME).
+
 ### Changed - README rewritten for the audience that actually installs this (BC developers), and two false claims in it fixed
 
 The old README opened with a metrics table written in resolver vocabulary — "0.0000%

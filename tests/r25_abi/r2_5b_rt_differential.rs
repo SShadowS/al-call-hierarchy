@@ -40,7 +40,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
 use serde_json::Value;
 
 use crate::regen;
@@ -314,7 +314,7 @@ fn differential_r2_5b_record_types_match_goldens() {
         let projection =
             match build_cross_app_l3_from_workspace(&fixture_dir, R2_5B_MODEL_INSTANCE_ID) {
                 Some(cross) => cross.project_record_types(),
-                None => al_call_hierarchy::engine::l3::l3_workspace::L3RecordTypeProjection {
+                None => al_sem::engine::l3::l3_workspace::L3RecordTypeProjection {
                     tables: vec![],
                     routines: vec![],
                 },

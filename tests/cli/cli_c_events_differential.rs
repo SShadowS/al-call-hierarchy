@@ -24,13 +24,13 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::gate::events::{
+use al_sem::engine::gate::events::{
     EventsChainsOptions, EventsFanoutOptions, format_chains_human, format_chains_json,
     format_fanout_human, format_fanout_json, run_events_chains, run_events_fanout,
 };
 
 use crate::regen;
-use al_call_hierarchy::engine::l5::event_flow::Scope;
+use al_sem::engine::l5::event_flow::Scope;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -383,10 +383,7 @@ fn stderr_text(lines: &[String]) -> String {
     }
 }
 
-fn run_partial_fanout(
-    policy: &str,
-    format: &str,
-) -> al_call_hierarchy::engine::gate::events::EventsRunResult {
+fn run_partial_fanout(policy: &str, format: &str) -> al_sem::engine::gate::events::EventsRunResult {
     let ws = corpus_dir().join("ws-event-partial-coverage");
     assert!(ws.is_dir(), "fixture missing: {}", ws.display());
     let opts = EventsFanoutOptions {
@@ -501,7 +498,7 @@ fn events_partial_coverage_policy_ignore() {
 
 #[test]
 fn coverage_policy_native_oracle() {
-    use al_call_hierarchy::engine::l5::event_flow::{FanoutCoverage, FanoutEntry, FanoutReport};
+    use al_sem::engine::l5::event_flow::{FanoutCoverage, FanoutEntry, FanoutReport};
 
     let partial = FanoutEntry {
         publisher: "P1".to_string(),
@@ -611,10 +608,8 @@ fn coverage_policy_native_oracle() {
 
 #[test]
 fn cycle_native_oracle() {
-    use al_call_hierarchy::engine::l3::event_graph::{
-        EventEdge, EventGraph, EventSymbol, Evidence,
-    };
-    use al_call_hierarchy::engine::l5::event_flow::{
+    use al_sem::engine::l3::event_graph::{EventEdge, EventGraph, EventSymbol, Evidence};
+    use al_sem::engine::l5::event_flow::{
         ChainNode, ChainWalkOptions, Scope, build_event_flow_indexes, compute_chain_report,
         walk_event_chain,
     };

@@ -21,8 +21,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
 use crate::regen;
 
@@ -189,7 +189,7 @@ fn run_json(fixture: &str, detector_csv: &str) -> String {
 
 /// Obtain the all-detectors CSV (all 41 detectors in registry order).
 fn all_detector_csv() -> String {
-    use al_call_hierarchy::engine::l5::detectors::registered_detectors;
+    use al_sem::engine::l5::detectors::registered_detectors;
     registered_detectors()
         .into_iter()
         .map(|d| d.name)
@@ -443,8 +443,8 @@ fn envelope_fields_are_correct() {
 /// severities error/warning/info.
 #[test]
 fn project_diagnostics_shape_oracle() {
-    use al_call_hierarchy::engine::gate::format_json::project_diagnostics;
-    use al_call_hierarchy::engine::l5::registry::Diagnostic;
+    use al_sem::engine::gate::format_json::project_diagnostics;
+    use al_sem::engine::l5::registry::Diagnostic;
 
     let diags = vec![
         Diagnostic {

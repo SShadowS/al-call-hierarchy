@@ -7,8 +7,8 @@
 //! `tests/aldump-smoke-goldens/`); this test no longer reads from any al-sem
 //! checkout and hard-requires its inputs (no skip-gate).
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::snapshot::snapshot_workspace;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::snapshot::snapshot_workspace;
 use std::path::PathBuf;
 use std::process::Command;
 

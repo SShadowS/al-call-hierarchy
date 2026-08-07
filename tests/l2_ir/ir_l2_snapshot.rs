@@ -21,7 +21,7 @@
 
 use std::path::{Path, PathBuf};
 
-use al_call_hierarchy::engine::l2::ir_walk::project_routine_features_ir;
+use al_sem::engine::l2::ir_walk::project_routine_features_ir;
 
 use crate::regen;
 
@@ -167,7 +167,7 @@ fn ir_l2_features_snapshot_over_r0_corpus() {
 /// 4 load-bearing fields during the migration; keep the snapshot digest on `Debug`.
 #[test]
 fn debug_digest_catches_serde_skip_drift() {
-    use al_call_hierarchy::engine::l2::features::{PAnchor, PRecordOperation, PTempState};
+    use al_sem::engine::l2::features::{PAnchor, PRecordOperation, PTempState};
     let base = PRecordOperation {
         id: "r/op0".to_string(),
         op: "modify".to_string(),

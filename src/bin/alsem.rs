@@ -60,28 +60,26 @@ const _: () = assert!(
      from mimalloc.h before trusting MI_OPTION_PURGE_DELAY"
 );
 
-use al_call_hierarchy::engine::gate::cache_prune::{format_prune_report, prune_cache};
-use al_call_hierarchy::engine::gate::events::{
+use al_sem::engine::gate::cache_prune::{format_prune_report, prune_cache};
+use al_sem::engine::gate::events::{
     EventsChainsOptions, EventsFanoutOptions, run_events_chains, run_events_fanout,
 };
-use al_call_hierarchy::engine::gate::exit_code::{exit, parse_fail_on};
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
-use al_call_hierarchy::engine::gate::version::driver_version;
-use al_call_hierarchy::engine::l4::effect_query_cli::{
+use al_sem::engine::gate::exit_code::{exit, parse_fail_on};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::presets::PRESET_NAMES_LIST;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
+use al_sem::engine::gate::version::driver_version;
+use al_sem::engine::l4::effect_query_cli::{
     Direction, QueryRunResult, run_query_effects_pipeline, run_query_touches_pipeline,
 };
-use al_call_hierarchy::engine::l5::digest_cli::{
-    ChangedAutoDetect, auto_detect_changed, run_digest_pipeline,
-};
-use al_call_hierarchy::engine::l5::event_flow::Scope as EventScope;
-use al_call_hierarchy::engine::l5::fingerprint_cli::{
+use al_sem::engine::l5::digest_cli::{ChangedAutoDetect, auto_detect_changed, run_digest_pipeline};
+use al_sem::engine::l5::event_flow::Scope as EventScope;
+use al_sem::engine::l5::fingerprint_cli::{
     FingerprintOptions, FingerprintOutput, ShardMode, SpecifiedFlags, default_format,
     normalize_witness, reject_illegal_combos, run_fingerprint_pipeline, validate_roots,
     write_fingerprint_output,
 };
-use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
+use al_sem::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
 
 const SEVERITY_VALUES: &[&str] = &["critical", "high", "medium", "low", "info"];
@@ -732,7 +730,7 @@ fn run_query_effects_cmd(e: QueryEffectsCli) -> ExitCode {
 // ── policy check command ─────────────────────────────────────────────────────
 
 fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
-    use al_call_hierarchy::engine::gate::policy::pipeline::{PolicyCheckOptions, run_policy_check};
+    use al_sem::engine::gate::policy::pipeline::{PolicyCheckOptions, run_policy_check};
 
     // Validate --format (human | json | sarif). al-sem writes the message + exit 1.
     const VALID_FORMATS: &[&str] = &["human", "json", "sarif"];
@@ -792,9 +790,7 @@ fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
 // ── policy explain command ───────────────────────────────────────────────────
 
 fn run_policy_explain_cmd(e: PolicyExplainCli) -> ExitCode {
-    use al_call_hierarchy::engine::gate::policy::pipeline::{
-        PolicyExplainOptions, run_policy_explain,
-    };
+    use al_sem::engine::gate::policy::pipeline::{PolicyExplainOptions, run_policy_explain};
 
     // al-sem validates --format against {human, json} but IGNORES it (always human).
     const VALID_FORMATS: &[&str] = &["human", "json"];
@@ -828,8 +824,8 @@ fn run_policy_explain_cmd(e: PolicyExplainCli) -> ExitCode {
 // ── diff command ────────────────────────────────────────────────────────────
 
 fn run_diff_cmd(d: DiffCli) -> ExitCode {
-    use al_call_hierarchy::engine::gate::diff::cli::{DiffCliOptions, run_diff};
-    use al_call_hierarchy::engine::gate::diff::{CoveragePolicy, Severity};
+    use al_sem::engine::gate::diff::cli::{DiffCliOptions, run_diff};
+    use al_sem::engine::gate::diff::{CoveragePolicy, Severity};
 
     // Validate --format (human | json | sarif). al-sem writes the message + exit 1.
     const VALID_FORMATS: &[&str] = &["human", "json", "sarif"];
@@ -1562,8 +1558,8 @@ mod tests {
     /// Json is implemented (Stage A2), Terminal (Stage A3), Html (Stage A4).
     #[test]
     fn stub_formats_return_err() {
-        use al_call_hierarchy::engine::gate::filter::Scope;
-        use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, run_analyze_with_exit};
+        use al_sem::engine::gate::filter::Scope;
+        use al_sem::engine::gate::run::{AnalyzeArgs, run_analyze_with_exit};
         use std::path::PathBuf;
 
         // A real, resolvable workspace fixture (the SARIF/pr-summary differentials use it).

@@ -29,13 +29,13 @@
 //!    variable when a local has the same name. It serves as a regression guard
 //!    confirming the full-pipeline behavior is correct.
 
-use al_call_hierarchy::engine::l2::features::PAnchor;
-use al_call_hierarchy::engine::l3::l3_workspace::{
+use al_sem::engine::l2::features::PAnchor;
+use al_sem::engine::l3::l3_workspace::{
     L3RecordOperation, L3Routine, L3Table, L3Variable, RoutineVariables,
     assemble_and_resolve_default,
 };
-use al_call_hierarchy::engine::l3::record_types::resolve_routine_record_types;
-use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+use al_sem::engine::l3::record_types::resolve_routine_record_types;
+use al_sem::engine::l3::symbol_table::SymbolTable;
 
 const APP_GUID: &str = "2a000000-0000-0000-0000-0000000002aa";
 

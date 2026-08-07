@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l5::fingerprint_cli::{
+use al_sem::engine::l5::fingerprint_cli::{
     FingerprintFormat, FingerprintOptions, FingerprintOutput, run_fingerprint_pipeline,
 };
 
@@ -205,7 +205,7 @@ fn inventory_only_exit_code_zero() {
 /// `--inventory-only` with `--format cbor` must be rejected (json only).
 #[test]
 fn inventory_only_cbor_rejected() {
-    use al_call_hierarchy::engine::l5::fingerprint_cli::{
+    use al_sem::engine::l5::fingerprint_cli::{
         SpecifiedFlags, default_format, reject_illegal_combos,
     };
     // Simulate: --inventory-only --format cbor (no query flags).
@@ -374,8 +374,7 @@ fn two_field_rows_have_distinct_stable_ids_and_deterministic_order() {
         assert!(!obj.contains('#'), "exactly one `#` in {sid}");
         assert_eq!(hash.len(), 64, "hash part stays 64 bytes in {sid}");
         assert!(
-            hash.bytes()
-                .all(al_call_hierarchy::engine::ids::is_lower_hex),
+            hash.bytes().all(al_sem::engine::ids::is_lower_hex),
             "hash part stays lowercase hex in {sid}"
         );
     }
@@ -393,7 +392,7 @@ fn two_field_rows_have_distinct_stable_ids_and_deterministic_order() {
     // decides, since the two ids differ. Recomputed from the emitted ids rather than
     // hardcoded, so the assertion pins the SORT RULE and not one hash's accident.
     assert_eq!(
-        al_call_hierarchy::engine::ids::locale_compare(sid0, sid1),
+        al_sem::engine::ids::locale_compare(sid0, sid1),
         std::cmp::Ordering::Less,
         "inventory rows must be ordered by locale_compare(stableRoutineId)"
     );

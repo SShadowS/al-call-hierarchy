@@ -13,15 +13,15 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::l5::digest::{
+use al_sem::engine::l5::digest::{
     FingerprintIndexesPub, HumanHop, TerminalHopInfo, reconstruct_witness_paths_pub,
 };
-use al_call_hierarchy::engine::l5::fingerprint_cli::{
+use al_sem::engine::l5::fingerprint_cli::{
     FingerprintFormat, SpecifiedFlags, default_format, normalize_witness, reject_illegal_combos,
     validate_roots,
 };
-use al_call_hierarchy::engine::l5::fingerprint_query::{WitnessLimit, format_hop};
-use al_call_hierarchy::engine::l5::snapshot::{
+use al_sem::engine::l5::fingerprint_query::{WitnessLimit, format_hop};
+use al_sem::engine::l5::snapshot::{
     SnapshotCapabilityFact, SnapshotCoverageRecord, SnapshotGraphEdge, SnapshotRange,
     SnapshotSourceAnchor,
 };
@@ -621,7 +621,7 @@ fn item8_interface_dispatch_pluralization() {
 
 #[test]
 fn item12_unresolved_dispatch_sorts_by_witness_callsite_id() {
-    use al_call_hierarchy::engine::l5::fingerprint_query::DispatchInstance;
+    use al_sem::engine::l5::fingerprint_query::DispatchInstance;
     let mk = |cs: Option<&str>| DispatchInstance {
         object_type: "Codeunit".to_string(),
         target_id: None,
@@ -654,8 +654,8 @@ fn item12_unresolved_dispatch_sorts_by_witness_callsite_id() {
 
 #[test]
 fn item16_unresolved_selector_human_message() {
-    use al_call_hierarchy::engine::l5::fingerprint_cli::format_selector_errors_human;
-    use al_call_hierarchy::engine::l5::fingerprint_query::FingerprintQueryDiagnostic;
+    use al_sem::engine::l5::fingerprint_cli::format_selector_errors_human;
+    use al_sem::engine::l5::fingerprint_query::FingerprintQueryDiagnostic;
     let diags = vec![FingerprintQueryDiagnostic::SelectorUnresolved {
         selector: "DoesNotExist".to_string(),
     }];
@@ -667,8 +667,8 @@ fn item16_unresolved_selector_human_message() {
 
 #[test]
 fn item16_ambiguous_selector_human_message() {
-    use al_call_hierarchy::engine::l5::fingerprint_cli::format_selector_errors_human;
-    use al_call_hierarchy::engine::l5::fingerprint_query::FingerprintQueryDiagnostic;
+    use al_sem::engine::l5::fingerprint_cli::format_selector_errors_human;
+    use al_sem::engine::l5::fingerprint_query::FingerprintQueryDiagnostic;
     let diags = vec![FingerprintQueryDiagnostic::SelectorAmbiguous {
         selector: "Post".to_string(),
         matched_form: "one-segment".to_string(),
@@ -692,7 +692,7 @@ fn item16_ambiguous_selector_human_message() {
 // Item 8 — terminal hop rendering (formatHop case "terminal").
 #[test]
 fn item8_terminal_operation_and_callsite_and_synthetic() {
-    use al_call_hierarchy::engine::l5::fingerprint_query::format_terminal_hop;
+    use al_sem::engine::l5::fingerprint_query::format_terminal_hop;
     let op = TerminalHopInfo {
         evidence_kind: "operation".to_string(),
         display_text: "Header.Modify".to_string(),

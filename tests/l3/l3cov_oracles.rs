@@ -51,11 +51,11 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-use al_call_hierarchy::engine::l3::coverage::{CoverageDiagnostic, CoverageUnit, build_coverage};
-use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
-use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
-use al_call_hierarchy::engine::l3::taxonomy::DispatchKind;
+use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+use al_sem::engine::l3::coverage::{CoverageDiagnostic, CoverageUnit, build_coverage};
+use al_sem::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
+use al_sem::engine::l3::symbol_table::SymbolTable;
+use al_sem::engine::l3::taxonomy::DispatchKind;
 
 const APP_GUID: &str = "0d000000-0000-0000-0000-0000000002dd";
 
@@ -371,8 +371,8 @@ fn opaque_apps_empty_and_no_real_duplicate_source_only() {
 
 #[test]
 fn multiset_is_sorted_and_preserves_duplicates_synthetically() {
-    use al_call_hierarchy::engine::l3::call_resolver::{CallEdge, UnknownReason};
-    use al_call_hierarchy::engine::l3::taxonomy::{DispatchKind, Resolution};
+    use al_sem::engine::l3::call_resolver::{CallEdge, UnknownReason};
+    use al_sem::engine::l3::taxonomy::{DispatchKind, Resolution};
 
     // Two unresolved edges sharing one callsiteId + two dynamic edges sharing one
     // operationId — exactly the synthetic shape al-sem's `buildCoverage` preserves.

@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l5::prove::run_prove_pipeline;
+use al_sem::engine::l5::prove::run_prove_pipeline;
 
 use crate::regen;
 

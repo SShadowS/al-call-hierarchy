@@ -1,4 +1,4 @@
-# AL Call Hierarchy
+# al-sem
 
 Static analysis for Business Central AL that understands your whole solution — your
 workspace *and* every extension in your `.alpackages` — as one program. It finds the
@@ -6,7 +6,7 @@ performance and transaction bugs your customers report, and it answers "who call
 and "what breaks if I change this?" across app boundaries.
 
 [![Rust](https://img.shields.io/badge/rust-1.85+-orange)](https://rust-lang.org)
-[![GitHub release](https://img.shields.io/github/v/release/SShadowS/al-call-hierarchy)](https://github.com/SShadowS/al-call-hierarchy/releases)
+[![GitHub release](https://img.shields.io/github/v/release/SShadowS/al-sem)](https://github.com/SShadowS/al-sem/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 ## What's in the box
@@ -55,19 +55,23 @@ line counts, fan-in, unused procedures) as `text`, `json`, or `csv`.
 al-call-hierarchy --project path/to/workspace --analyze --format text
 ```
 
+The editor server's binary is called `al-call-hierarchy` rather than `al-sem`: it was this
+project's original name, and editor integrations spawn it by that name, so it kept it when
+the project was renamed.
+
 `aldump` also ships in the repo. It dumps this engine's own internals and exists for
 developing this project — you don't need it.
 
 ## Install
 
 Prebuilt binaries for each release are on the
-[releases page](https://github.com/SShadowS/al-call-hierarchy/releases).
+[releases page](https://github.com/SShadowS/al-sem/releases).
 
 From source (Rust 1.85 or newer — the crates use edition 2024):
 
 ```bash
-git clone --recurse-submodules https://github.com/SShadowS/al-call-hierarchy
-cd al-call-hierarchy
+git clone --recurse-submodules https://github.com/SShadowS/al-sem
+cd al-sem
 cargo build --release
 ```
 
@@ -241,16 +245,20 @@ file's current text rather than served from a stored range, so the answer can't 
 
 | Location | Purpose |
 |----------|---------|
-| `~/.al-call-hierarchy/config.json` | Diagnostic thresholds, telemetry opt-out |
-| `<workspace>/.al-call-hierarchy.json` | Per-workspace overrides |
+| `~/.al-sem/config.json` | Diagnostic thresholds, telemetry opt-out |
+| `<workspace>/.al-sem.json` | Per-workspace overrides |
 | `--no-watcher`, `--no-telemetry`, `--verbose` | Runtime flags (see `--help`) |
+
+If you used this before it was renamed, your existing `~/.al-call-hierarchy/config.json`
+and `<workspace>/.al-call-hierarchy.json` are still read when the new files are absent, so
+nothing resets. `AL_CH_TELEMETRY` keeps working alongside `AL_SEM_TELEMETRY` too.
 
 ## Telemetry
 
 Anonymous, opt-out failure-diagnostics telemetry helps find resolution gaps hit by real
 projects. **No raw identifiers, paths, or source leave your machine** — identifier names
 are salted-hashed per installation. Off by default in debug builds, tests, and CI.
-Disable via `AL_CH_TELEMETRY=0` / `DO_NOT_TRACK=1`, `--no-telemetry`, or the config file.
+Disable via `AL_SEM_TELEMETRY=0` / `DO_NOT_TRACK=1`, `--no-telemetry`, or the config file.
 Details: [docs/telemetry.md](docs/telemetry.md); auditable source:
 [src/telemetry/](src/telemetry/).
 

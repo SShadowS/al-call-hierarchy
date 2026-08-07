@@ -40,12 +40,12 @@
 #[allow(dead_code)]
 mod perf_support;
 
-use al_call_hierarchy::program::abi_ingest::AbiCache;
-use al_call_hierarchy::program::build::build_program_graph;
-use al_call_hierarchy::program::resolve::decl_surface::DeclSurface;
-use al_call_hierarchy::program::resolve::full::resolve_full_program;
-use al_call_hierarchy::program::resolve::index::ResolveIndex;
-use al_call_hierarchy::snapshot::{AppSetSnapshot, SnapshotBuilder, parse_snapshot};
+use al_sem::program::abi_ingest::AbiCache;
+use al_sem::program::build::build_program_graph;
+use al_sem::program::resolve::decl_surface::DeclSurface;
+use al_sem::program::resolve::full::resolve_full_program;
+use al_sem::program::resolve::index::ResolveIndex;
+use al_sem::snapshot::{AppSetSnapshot, SnapshotBuilder, parse_snapshot};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use tempfile::TempDir;
 

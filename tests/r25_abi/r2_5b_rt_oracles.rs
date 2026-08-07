@@ -31,8 +31,8 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
-use al_call_hierarchy::engine::l3::l3_workspace::{
+use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+use al_sem::engine::l3::l3_workspace::{
     L3RecordTypeProjection, PRoutineRecordTypes, PTableRecordTypes,
 };
 

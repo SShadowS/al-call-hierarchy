@@ -20,10 +20,10 @@
 //! Drives the REAL detector over inline AL workspaces (mirrors
 //! `tests/gap_g9_trigger_rec.rs`).
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::run_detectors;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::finding::Finding;
+use al_sem::engine::l5::registry::run_detectors;
 
 const APP_GUID: &str = "11111111-0000-0000-0000-000000g12abc";
 

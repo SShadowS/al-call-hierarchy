@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/r2-5b-fixtures/cross-app-resolution")

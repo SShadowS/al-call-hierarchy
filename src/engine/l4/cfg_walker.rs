@@ -1797,7 +1797,7 @@ mod tests {
         // T2.1 red fixture: `walk_cfg` recurses once per nested `if`. Without
         // MAX_CFG_WALK_DEPTH this overflows ANY finite native stack. Run on a
         // thread sized to the LSP's real main-thread stack on Windows (~1 MiB
-        // — see `al_call_hierarchy::big_stack`'s doc) so a regression
+        // — see `al_sem::big_stack`'s doc) so a regression
         // reproduces the actual crash this hardens against.
         // 2,000, not 50k: `PCFNNode.children: Option<Vec<PCFNNode>>` has
         // auto-generated recursive Drop glue, so an extremely deep chain would

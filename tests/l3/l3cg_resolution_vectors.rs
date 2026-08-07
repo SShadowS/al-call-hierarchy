@@ -11,12 +11,12 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::ids::to_stable_object_id;
-use al_call_hierarchy::engine::l3::call_resolver::{
+use al_sem::engine::ids::to_stable_object_id;
+use al_sem::engine::l3::call_resolver::{
     CallEdge, DeclaredDependency, UpgradedBinding, resolve_calls,
 };
-use al_call_hierarchy::engine::l3::l3_workspace::{assemble_and_resolve, to_stable_table_id};
-use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+use al_sem::engine::l3::l3_workspace::{assemble_and_resolve, to_stable_table_id};
+use al_sem::engine::l3::symbol_table::SymbolTable;
 
 // ---------------------------------------------------------------------------
 // Vector document shape (resolution vectors only).

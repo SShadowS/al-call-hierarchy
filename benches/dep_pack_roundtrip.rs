@@ -35,15 +35,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use al_call_hierarchy::program::abi_ingest::AbiCache;
-use al_call_hierarchy::program::build::{assemble_program_graph, build_dep_layer};
-use al_call_hierarchy::program::node::{AppRef, AppRegistry, ObjectNodeId, RoutineNodeId};
-use al_call_hierarchy::program::node_extract::{ObjectNode, RoutineNode};
-use al_call_hierarchy::program::pack::{
-    DepPack, PACK_SCHEMA, PackedFile, compute_self_hash, decode, encode,
-};
-use al_call_hierarchy::program::resolve::decl_surface::{DeclSurface, RoutineMeta};
-use al_call_hierarchy::snapshot::{AppId, ParsedUnit, SnapshotBuilder, parse_snapshot};
+use al_sem::program::abi_ingest::AbiCache;
+use al_sem::program::build::{assemble_program_graph, build_dep_layer};
+use al_sem::program::node::{AppRef, AppRegistry, ObjectNodeId, RoutineNodeId};
+use al_sem::program::node_extract::{ObjectNode, RoutineNode};
+use al_sem::program::pack::{DepPack, PACK_SCHEMA, PackedFile, compute_self_hash, decode, encode};
+use al_sem::program::resolve::decl_surface::{DeclSurface, RoutineMeta};
+use al_sem::snapshot::{AppId, ParsedUnit, SnapshotBuilder, parse_snapshot};
 use rayon::prelude::*;
 
 /// One app's contribution, already bucketed by the file it came from.
@@ -406,7 +404,7 @@ fn write_packs(dir: &std::path::Path, packs: &[Vec<u8>]) -> Vec<PathBuf> {
 fn measure(paths: &[PathBuf], packs: &[Vec<u8>], apps: &AppRegistry) -> Vec<f64> {
     // The same LOCAL big-stack pool `parse_snapshot` installs into
     // (`snapshot::parse::parse_snapshot`), not rayon's global pool.
-    let pool = al_call_hierarchy::big_stack::big_stack_pool();
+    let pool = al_sem::big_stack::big_stack_pool();
 
     // The integrity pass on its own. `decode` blake3s the whole body before it
     // parses a field, and at 33 MB that is no longer the free check Task 5

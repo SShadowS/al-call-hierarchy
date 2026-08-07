@@ -33,11 +33,11 @@
 
 use std::path::{Path, PathBuf};
 
-use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
-use al_call_hierarchy::engine::gate::run::compute_analyzer_diagnostics;
-use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_workspace};
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::snapshot_full::{
+use al_sem::engine::gate::model_instance_id::compute_gate_model_instance_id;
+use al_sem::engine::gate::run::compute_analyzer_diagnostics;
+use al_sem::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_workspace};
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::snapshot_full::{
     EnvelopeDiagnostic, FullSnapshotOptions, compose_full_snapshot, serialize_cbor,
     serialize_cbor_gz, serialize_envelope, serialize_json, serialize_sharded,
 };
@@ -179,13 +179,7 @@ fn check_or_regen(golden_path: &Path, got: &[u8], label: &str) {
 
 /// Compose the full snapshot tree for one fixture. Returns the tree, the resolved
 /// model (for envelope diagnostics), and the workspace dir.
-fn compose_for(
-    fixture: &str,
-) -> (
-    al_call_hierarchy::engine::gate::cbor::CborValue,
-    L3Resolved,
-    PathBuf,
-) {
+fn compose_for(fixture: &str) -> (al_sem::engine::gate::cbor::CborValue, L3Resolved, PathBuf) {
     let fixture_dir = fixtures_dir().join(fixture);
     assert!(
         fixture_dir.is_dir(),
@@ -211,7 +205,7 @@ fn compose_for(
 }
 
 /// Just the tree (for raw/cbor tests that don't need diagnostics).
-fn tree_for(fixture: &str) -> al_call_hierarchy::engine::gate::cbor::CborValue {
+fn tree_for(fixture: &str) -> al_sem::engine::gate::cbor::CborValue {
     compose_for(fixture).0
 }
 

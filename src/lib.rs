@@ -43,6 +43,8 @@ pub mod lsp;
 pub mod program;
 pub mod protocol;
 pub mod snapshot;
+/// Per-user state locations, and the read-fallback that carries pre-rename installs.
+pub mod state_paths;
 pub mod telemetry;
 /// Core AL object-type enum shared between lib and binary targets.
 pub mod types;

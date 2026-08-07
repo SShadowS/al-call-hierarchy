@@ -136,6 +136,11 @@ pub const EVENT_PAIR_DOMAIN_V1: &str = "event-pair:v1";
 /// "Governance" section for the full reproducibility-over-secrecy rationale.
 /// Bump the trailing version tag (and re-mint every committed golden) if this
 /// value ever needs to change.
+///
+/// The leading `al-call-hierarchy` is a FROZEN BYTE STRING, not a reference to the crate
+/// name — it deliberately survived the 2026-08-07 rename to `al-sem`. Every committed
+/// anonymized golden was minted with these exact bytes, so "tidying" it to match the
+/// crate name silently invalidates all of them.
 const ANON_SALT: &[u8] = b"al-call-hierarchy/1B.3b/anon-fixed-salt/v1";
 
 /// Number of HMAC-SHA256 output bytes kept per [`AnonId`] (truncated from the

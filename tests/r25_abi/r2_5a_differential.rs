@@ -39,9 +39,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::merged_index::{
-    build_merged_index_from_path, serialize_projection,
-};
+use al_sem::engine::deps::merged_index::{build_merged_index_from_path, serialize_projection};
 use serde_json::Value;
 
 use crate::regen;

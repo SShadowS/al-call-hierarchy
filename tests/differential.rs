@@ -50,15 +50,15 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use al_call_hierarchy::engine::l2::features::L2Projection;
-use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
-use al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection;
-use al_call_hierarchy::engine::l3::coverage::AnalysisCoverage;
-use al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection;
-use al_call_hierarchy::engine::l3::l3_workspace::{
+use al_sem::engine::l2::features::L2Projection;
+use al_sem::engine::l2::l2_workspace::project_workspace;
+use al_sem::engine::l3::call_graph_projection::L3CallGraphProjection;
+use al_sem::engine::l3::coverage::AnalysisCoverage;
+use al_sem::engine::l3::event_graph::L3EventGraphProjection;
+use al_sem::engine::l3::l3_workspace::{
     L3RecordTypeProjection, assemble_and_resolve_workspace_default,
 };
-use al_call_hierarchy::engine::snapshot::{
+use al_sem::engine::snapshot::{
     IdentitySnapshot, ObjectIdentity, RoutineIdentity, snapshot_workspace,
 };
 

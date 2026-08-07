@@ -49,7 +49,7 @@
 //! As of this gate every invariant passes with NO `src/engine/l3/**` change
 //! required — the resolution was correct.
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 const APP_GUID: &str = "2a000000-0000-0000-0000-0000000002aa";
 
@@ -64,7 +64,7 @@ fn stable_object(object_type: &str, number: i64) -> String {
 }
 
 /// Assemble + resolve a single-file inline workspace (`src/main.al`).
-fn resolve_one(source: &str) -> al_call_hierarchy::engine::l3::l3_workspace::L3Resolved {
+fn resolve_one(source: &str) -> al_sem::engine::l3::l3_workspace::L3Resolved {
     assemble_and_resolve_default(&[("src/main.al".to_string(), source.to_string())], APP_GUID)
 }
 

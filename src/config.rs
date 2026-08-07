@@ -2,8 +2,12 @@
 //!
 //! Config resolution order (later wins per field):
 //! 1. Built-in defaults
-//! 2. Global config at `~/.al-call-hierarchy/config.json`
-//! 3. Workspace config at `{workspace}/.al-call-hierarchy.json`
+//! 2. Global config at `~/.al-sem/config.json`
+//! 3. Workspace config at `{workspace}/.al-sem.json`
+//!
+//! Both locations fall back to their pre-rename names (`~/.al-call-hierarchy/config.json`
+//! and `{workspace}/.al-call-hierarchy.json`) when the current file is absent, so an
+//! install that predates the rename keeps its thresholds — see [`crate::state_paths`].
 
 use log::{info, warn};
 use serde::Deserialize;
@@ -75,9 +79,10 @@ struct ThresholdSingle {
     warning: Option<u32>,
 }
 
-/// Returns the global config path: `~/.al-call-hierarchy/config.json`
+/// Returns the global config path to READ: `~/.al-sem/config.json`, or the pre-rename
+/// `~/.al-call-hierarchy/config.json` when only that one exists.
 fn global_config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".al-call-hierarchy").join("config.json"))
+    crate::state_paths::state_path_for_read("config.json")
 }
 
 /// Parse a config file, returning None if missing or invalid.
@@ -219,7 +224,9 @@ impl DiagnosticConfig {
     pub fn load(workspace_root: &Path) -> Self {
         // Phase 1: Load both config files
         let global = global_config_path().and_then(|p| load_file(&p));
-        let workspace = load_file(&workspace_root.join(".al-call-hierarchy.json"));
+        let workspace = load_file(&crate::state_paths::workspace_config_for_read(
+            workspace_root,
+        ));
 
         // Phase 2: Merge sections (global as base, workspace as overlay)
         let merged = match (global, workspace) {
@@ -234,7 +241,7 @@ impl DiagnosticConfig {
     }
 }
 
-/// Telemetry section of `~/.al-call-hierarchy/config.json`. All fields optional;
+/// Telemetry section of `~/.al-sem/config.json`. All fields optional;
 /// the telemetry subsystem applies its own defaults from the spec.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -277,7 +284,9 @@ impl TelemetryFileConfig {
         let global = global_config_path()
             .map(|p| Self::load_at(&p))
             .unwrap_or_default();
-        let workspace = Self::load_at(&workspace_root.join(".al-call-hierarchy.json"));
+        let workspace = Self::load_at(&crate::state_paths::workspace_config_for_read(
+            workspace_root,
+        ));
         Self::merge(global, workspace)
     }
 
@@ -325,7 +334,7 @@ mod tests {
     fn test_load_partial_config() {
         let dir = TempDir::new().unwrap();
         fs::write(
-            dir.path().join(".al-call-hierarchy.json"),
+            dir.path().join(".al-sem.json"),
             r#"{ "diagnostics": { "complexity": { "warning": 8 } } }"#,
         )
         .unwrap();
@@ -335,11 +344,58 @@ mod tests {
         assert_eq!(config.params_warning, 4); // default preserved
     }
 
+    // The next two tests pin the rename fallback at the real USE — `DiagnosticConfig::
+    // load`, the function the server calls — not at `state_paths::resolve_for_read`.
+    // Testing the helper alone would let the call site lose the fallback while staying
+    // green. Both preconditions are written literally as files, so neither depends on
+    // production code to produce them.
+
+    #[test]
+    fn workspace_config_under_the_pre_rename_name_is_still_honoured() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join(".al-call-hierarchy.json"),
+            r#"{ "diagnostics": { "complexity": { "warning": 8 } } }"#,
+        )
+        .unwrap();
+        assert!(
+            !dir.path().join(".al-sem.json").exists(),
+            "precondition: only the pre-rename file exists"
+        );
+
+        let config = DiagnosticConfig::load(dir.path());
+        assert_eq!(
+            config.complexity_warning, 8,
+            "an install that predates the rename must not silently revert to defaults"
+        );
+    }
+
+    #[test]
+    fn the_current_workspace_config_wins_over_the_pre_rename_one() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join(".al-sem.json"),
+            r#"{ "diagnostics": { "complexity": { "warning": 8 } } }"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(".al-call-hierarchy.json"),
+            r#"{ "diagnostics": { "complexity": { "warning": 99 } } }"#,
+        )
+        .unwrap();
+
+        let config = DiagnosticConfig::load(dir.path());
+        assert_eq!(
+            config.complexity_warning, 8,
+            "the legacy file must not shadow the current one when both are present"
+        );
+    }
+
     #[test]
     fn test_load_full_config() {
         let dir = TempDir::new().unwrap();
         fs::write(
-            dir.path().join(".al-call-hierarchy.json"),
+            dir.path().join(".al-sem.json"),
             r#"{
                 "diagnostics": {
                     "complexity": { "warning": 8, "critical": 15 },
@@ -366,7 +422,7 @@ mod tests {
     fn test_load_disabled_categories() {
         let dir = TempDir::new().unwrap();
         fs::write(
-            dir.path().join(".al-call-hierarchy.json"),
+            dir.path().join(".al-sem.json"),
             r#"{
                 "diagnostics": {
                     "complexity": { "enabled": false },
@@ -392,7 +448,7 @@ mod tests {
     #[test]
     fn test_load_invalid_json() {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join(".al-call-hierarchy.json"), "not json").unwrap();
+        fs::write(dir.path().join(".al-sem.json"), "not json").unwrap();
         let config = DiagnosticConfig::load(dir.path());
         assert_eq!(config.complexity_warning, 5); // falls back to default
     }
@@ -452,9 +508,27 @@ mod tests {
         // Should return Some on any system with a home directory
         assert!(path.is_some());
         let p = path.unwrap();
+
+        // Which of the two directories comes back depends on what exists in the real
+        // `$HOME` of whoever is running the tests, so this cannot pin one answer without
+        // becoming machine-dependent. What it CAN pin is that the answer is always one of
+        // the two sanctioned locations and always the right file — the choice between
+        // them is pinned hermetically in `state_paths::tests`.
+        assert_eq!(
+            p.file_name().and_then(|f| f.to_str()),
+            Some("config.json"),
+            "the global config is always config.json"
+        );
+        let parent = p
+            .parent()
+            .and_then(|d| d.file_name())
+            .and_then(|f| f.to_str())
+            .expect("the path has a named parent directory");
         assert!(
-            p.ends_with(".al-call-hierarchy/config.json")
-                || p.ends_with(".al-call-hierarchy\\config.json")
+            parent == crate::state_paths::STATE_DIR
+                || parent == crate::state_paths::LEGACY_STATE_DIR,
+            "global config resolved outside both sanctioned state directories: {}",
+            p.display()
         );
     }
 
@@ -462,7 +536,7 @@ mod tests {
     fn test_load_telemetry_section() {
         let dir = TempDir::new().unwrap();
         fs::write(
-            dir.path().join(".al-call-hierarchy.json"),
+            dir.path().join(".al-sem.json"),
             r#"{
                 "telemetry": {
                     "enabled": false,
@@ -476,7 +550,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let tcfg = TelemetryFileConfig::load_at(&dir.path().join(".al-call-hierarchy.json"));
+        let tcfg = TelemetryFileConfig::load_at(&dir.path().join(".al-sem.json"));
         assert_eq!(tcfg.enabled, Some(false));
         assert_eq!(
             tcfg.connection_string.as_deref(),
@@ -492,12 +566,8 @@ mod tests {
     #[test]
     fn test_load_telemetry_missing_section_yields_empty() {
         let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".al-call-hierarchy.json"),
-            r#"{ "diagnostics": {} }"#,
-        )
-        .unwrap();
-        let tcfg = TelemetryFileConfig::load_at(&dir.path().join(".al-call-hierarchy.json"));
+        fs::write(dir.path().join(".al-sem.json"), r#"{ "diagnostics": {} }"#).unwrap();
+        let tcfg = TelemetryFileConfig::load_at(&dir.path().join(".al-sem.json"));
         assert!(tcfg.enabled.is_none());
         assert!(tcfg.connection_string.is_none());
     }

@@ -24,7 +24,7 @@ use crate::raw::{FieldName, RawKind, RawNode};
 /// (`x := 1 + 1 + … 50k terms`, or 50k-deep nested `if`) recurses the NATIVE call
 /// stack proportionally to input size, and release builds are `panic=abort`, so a
 /// stack overflow is an uncatchable process kill (T2.1). This budget makes the
-/// caller's big stack (`al_call_hierarchy::big_stack`) belt-and-suspenders rather
+/// caller's big stack (`al_sem::big_stack`) belt-and-suspenders rather
 /// than load-bearing: past this depth, lowering fails closed — a `SyntaxIssue` +
 /// `ExprKind::Unknown` / `StmtKind::Unknown` — instead of recursing further.
 ///

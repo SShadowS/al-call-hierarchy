@@ -5,7 +5,7 @@
 //! property (→ `HttpHeaders`), and `.Add(...)` is an `HttpHeaders` builtin. The
 //! compound receiver must therefore classify the callsite as a `builtin` edge, not a
 //! `CompoundReceiver` unknown.
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 fn codeunit_with_http_compound() -> &'static str {
     r#"codeunit 50120 "Http Caller"

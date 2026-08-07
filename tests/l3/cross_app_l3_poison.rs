@@ -14,8 +14,8 @@
 //! out-of-scope state. The parser uses lenient `serde_json::Value` navigation, so
 //! unknown keys are dropped — exactly the boundary guarantee, enforced end-to-end.
 
-use al_call_hierarchy::engine::deps::projection::project_abi_to_index;
-use al_call_hierarchy::engine::deps::symbol_reference::parse_symbol_reference;
+use al_sem::engine::deps::projection::project_abi_to_index;
+use al_sem::engine::deps::symbol_reference::parse_symbol_reference;
 
 const APP_GUID: &str = "dddddddd-0000-0000-0000-000000000001";
 const MODEL_INSTANCE_ID: &str = "r2.5b";

@@ -173,15 +173,15 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use al_call_hierarchy::lsp::snapshot::{DeclEntry, LspSnapshot};
-use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
-use al_call_hierarchy::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
-use al_call_hierarchy::program::resolve::edge::{
+use al_sem::lsp::snapshot::{DeclEntry, LspSnapshot};
+use al_sem::lsp::updater::{ChangeEvent, Rung, Updater};
+use al_sem::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
+use al_sem::program::resolve::edge::{
     CanonicalSpan, Condition, DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind,
     OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos, Witness,
 };
-use al_call_hierarchy::program::resolve::full::{ClassifiedEdge, ObligationId};
-use al_call_hierarchy::snapshot::ParsedUnit;
+use al_sem::program::resolve::full::{ClassifiedEdge, ObligationId};
+use al_sem::snapshot::ParsedUnit;
 
 // ---------------------------------------------------------------------------
 // Fixture plumbing
@@ -1671,7 +1671,7 @@ fn rung1_and_rung2_forward_dep_meta_dep_decls_and_dep_texts_by_arc_identity() {
     // can never share Arc identity with the `base`/`rung1_snap` values
     // above; this half proves the hot loop's cached-surface rung-1 variant
     // ALSO forwards by Arc identity, against its OWN base snapshot.
-    use al_call_hierarchy::lsp::updater::{SharedSnapshot, spawn_updater};
+    use al_sem::lsp::updater::{SharedSnapshot, spawn_updater};
     use std::sync::Arc;
     use std::sync::mpsc;
     use std::time::Duration;
@@ -1921,8 +1921,7 @@ codeunit 50100 "Alpha"
     // ---- decl_by_id: key-set equality + "one of the declaring files' own
     // entries" per id, against a fresh wholesale rebuild of the SAME
     // post-edit decls_by_file. ----
-    let fresh_decl_by_id =
-        al_call_hierarchy::lsp::snapshot::build_decl_by_id(&new_snap.decls_by_file);
+    let fresh_decl_by_id = al_sem::lsp::snapshot::build_decl_by_id(&new_snap.decls_by_file);
     let mut patched_ids: Vec<&RoutineNodeId> = new_snap.decl_by_id.keys().collect();
     let mut fresh_ids: Vec<&RoutineNodeId> = fresh_decl_by_id.keys().collect();
     patched_ids.sort();
@@ -1951,11 +1950,9 @@ codeunit 50100 "Alpha"
 
     // ---- incoming: sorted-multiset equality against a fresh build_incoming
     // over the SAME post-edit edges_by_file/event_edges. ----
-    let (fresh_incoming, fresh_publisher_fanout) = al_call_hierarchy::lsp::snapshot::build_incoming(
-        &new_snap.edges_by_file,
-        &new_snap.event_edges,
-    );
-    let sort_refs = |v: &[al_call_hierarchy::lsp::snapshot::EdgeRef]| {
+    let (fresh_incoming, fresh_publisher_fanout) =
+        al_sem::lsp::snapshot::build_incoming(&new_snap.edges_by_file, &new_snap.event_edges);
+    let sort_refs = |v: &[al_sem::lsp::snapshot::EdgeRef]| {
         let mut v: Vec<(String, u32)> = v.iter().map(|r| (r.file.to_string(), r.idx)).collect();
         v.sort();
         v
@@ -2072,11 +2069,9 @@ codeunit 50100 "Alpha"
         .expect("apply_batch must succeed");
     assert_eq!(rung, Rung::One, "a body-only edit must take rung 1");
 
-    let (fresh_incoming, _) = al_call_hierarchy::lsp::snapshot::build_incoming(
-        &new_snap.edges_by_file,
-        &new_snap.event_edges,
-    );
-    let sort_refs = |v: &[al_call_hierarchy::lsp::snapshot::EdgeRef]| {
+    let (fresh_incoming, _) =
+        al_sem::lsp::snapshot::build_incoming(&new_snap.edges_by_file, &new_snap.event_edges);
+    let sort_refs = |v: &[al_sem::lsp::snapshot::EdgeRef]| {
         let mut v: Vec<(String, u32)> = v.iter().map(|r| (r.file.to_string(), r.idx)).collect();
         v.sort();
         v
@@ -2181,7 +2176,7 @@ fn rung1_cross_file_duplicate_routine_id_survives_edit() {
         "fixture sanity: both files must compute the IDENTICAL RoutineNodeId for Shared"
     );
     assert_eq!(
-        al_call_hierarchy::lsp::snapshot::build_decl_multiplicity(&base.decls_by_file)
+        al_sem::lsp::snapshot::build_decl_multiplicity(&base.decls_by_file)
             .get(&shared_id)
             .copied(),
         Some(2),
@@ -2207,7 +2202,7 @@ fn rung1_cross_file_duplicate_routine_id_survives_edit() {
         "the duplicate id must survive a rung-1 edit to one of its 2 declaring files"
     );
     assert_eq!(
-        al_call_hierarchy::lsp::snapshot::build_decl_multiplicity(&snap1.decls_by_file)
+        al_sem::lsp::snapshot::build_decl_multiplicity(&snap1.decls_by_file)
             .get(&shared_id)
             .copied(),
         Some(2),
@@ -2230,7 +2225,7 @@ fn rung1_cross_file_duplicate_routine_id_survives_edit() {
         "the id must survive losing one of its 2 declaring files (multiplicity 2 -> 1)"
     );
     assert_eq!(
-        al_call_hierarchy::lsp::snapshot::build_decl_multiplicity(&snap2.decls_by_file)
+        al_sem::lsp::snapshot::build_decl_multiplicity(&snap2.decls_by_file)
             .get(&shared_id)
             .copied(),
         Some(1),

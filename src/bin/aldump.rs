@@ -24,13 +24,11 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
-use al_call_hierarchy::engine::deps::merged_index::{
-    build_merged_index_from_path, serialize_projection,
-};
-use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::snapshot::snapshot_workspace;
+use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+use al_sem::engine::deps::merged_index::{build_merged_index_from_path, serialize_projection};
+use al_sem::engine::l2::l2_workspace::project_workspace;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::snapshot::snapshot_workspace;
 
 /// modelInstanceId for the R2.5a merged-index emit. The emitted StableObjectId /
 /// StableRoutineId are modelInstanceId-INDEPENDENT (R0), so this value never
@@ -285,11 +283,10 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
-        let projection =
-            al_call_hierarchy::engine::deps::r3a4_projection::project_r3a4_from_workspace(
-                &workspace,
-                "cross-app-dep-hooks",
-            );
+        let projection = al_sem::engine::deps::r3a4_projection::project_r3a4_from_workspace(
+            &workspace,
+            "cross-app-dep-hooks",
+        );
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -326,7 +323,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
-        let projection = al_call_hierarchy::engine::l4::capability_cone::project_r3a5_cross_app(
+        let projection = al_sem::engine::l4::capability_cone::project_r3a5_cross_app(
             &workspace,
             "r0",
             "cross-app-full-summary",
@@ -363,7 +360,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let projection = al_call_hierarchy::engine::l4::summary::project_r3a2(&resolved);
+        let projection = al_sem::engine::l4::summary::project_r3a2(&resolved);
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -394,7 +391,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let projection = al_call_hierarchy::engine::l4::capability_cone::project_r3a3(&resolved);
+        let projection = al_sem::engine::l4::capability_cone::project_r3a3(&resolved);
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -420,7 +417,7 @@ fn main() -> ExitCode {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let detectors = al_call_hierarchy::engine::l5::detectors::registered_detectors();
+        let detectors = al_sem::engine::l5::detectors::registered_detectors();
         let detector_names: Vec<String> = detectors.iter().map(|d| d.name.clone()).collect();
         let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
             eprintln!(
@@ -429,7 +426,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let projection = al_call_hierarchy::engine::l5::finding::project_r4_findings(
+        let projection = al_sem::engine::l5::finding::project_r4_findings(
             &resolved,
             &detectors,
             &fixture_name,
@@ -466,10 +463,8 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let projection = al_call_hierarchy::engine::return_summary::project_r4f_return_summaries(
-            &resolved,
-            &fixture_name,
-        );
+        let projection =
+            al_sem::engine::return_summary::project_r4f_return_summaries(&resolved, &fixture_name);
         return match serde_json::to_string_pretty(&projection) {
             Ok(mut json) => {
                 json.push('\n');
@@ -504,8 +499,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let json =
-            al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot(&resolved, &fixture_name);
+        let json = al_sem::engine::l5::snapshot::project_r4f_snapshot(&resolved, &fixture_name);
         // `project_r4f_snapshot` already appends a trailing newline.
         print!("{json}");
         return ExitCode::SUCCESS;
@@ -531,10 +525,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let json = al_call_hierarchy::engine::l5::digest::project_r4f_digest_effects(
-            &resolved,
-            &fixture_name,
-        );
+        let json = al_sem::engine::l5::digest::project_r4f_digest_effects(&resolved, &fixture_name);
         // `project_r4f_digest_effects` already appends a trailing newline.
         print!("{json}");
         return ExitCode::SUCCESS;
@@ -560,10 +551,8 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let json = al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees(
-            &resolved,
-            &fixture_name,
-        );
+        let json =
+            al_sem::engine::l5::digest::project_r4f_scoped_guarantees(&resolved, &fixture_name);
         print!("{json}");
         return ExitCode::SUCCESS;
     }
@@ -588,7 +577,7 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let json = al_call_hierarchy::engine::l5::ordering_facts::project_r4f_ordering_facts(
+        let json = al_sem::engine::l5::ordering_facts::project_r4f_ordering_facts(
             &resolved,
             &fixture_name,
         );
@@ -615,11 +604,10 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         };
-        let projection =
-            al_call_hierarchy::engine::root_classification::project_r4f_root_classifications(
-                &resolved,
-                &fixture_name,
-            );
+        let projection = al_sem::engine::root_classification::project_r4f_root_classifications(
+            &resolved,
+            &fixture_name,
+        );
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -811,9 +799,9 @@ fn main() -> ExitCode {
         // tool/layout failure, not a legitimate empty answer, so it exits
         // non-zero with NO stdout output (never a `Histogram::default()`
         // masquerading as a real result).
-        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-        use al_call_hierarchy::engine::l3::resolution_class::Histogram;
-        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_sem::engine::l3::resolution_class::Histogram;
+        use al_sem::engine::l3::symbol_table::SymbolTable;
 
         let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
             eprintln!(
@@ -865,9 +853,9 @@ fn main() -> ExitCode {
         // the same JSON shape as `--l3-call-graph-stats` plus `depAppsLoaded`.
         // If the workspace has no deps / fails to build, emits a clear message and
         // exits cleanly (fail-closed). ADDITIVE — does not change source-only path.
-        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-        use al_call_hierarchy::engine::l3::resolution_class::Histogram;
-        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_sem::engine::l3::resolution_class::Histogram;
+        use al_sem::engine::l3::symbol_table::SymbolTable;
         use std::collections::HashSet;
 
         match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID) {
@@ -965,9 +953,9 @@ fn main() -> ExitCode {
         //
         // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
         // non-zero with no stdout output.
-        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-        use al_call_hierarchy::engine::l3::resolution_class::{Histogram, unknown_breakdown};
-        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_sem::engine::l3::resolution_class::{Histogram, unknown_breakdown};
+        use al_sem::engine::l3::symbol_table::SymbolTable;
 
         let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
             eprintln!(
@@ -1015,9 +1003,9 @@ fn main() -> ExitCode {
         // `UnknownReason` so the real (whole-program) holes can be targeted directly
         // rather than inferred from the source-only breakdown. Fail-closed → message
         // + empty breakdown JSON; never throws.
-        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-        use al_call_hierarchy::engine::l3::resolution_class::{Histogram, unknown_breakdown};
-        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_sem::engine::l3::resolution_class::{Histogram, unknown_breakdown};
+        use al_sem::engine::l3::symbol_table::SymbolTable;
         use std::collections::HashSet;
 
         match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID) {
@@ -1068,9 +1056,7 @@ fn main() -> ExitCode {
                     unknown_breakdown(&primary_edges);
 
                 if std::env::var("ALDUMP_DEBUG_UNKNOWN").is_ok() {
-                    use al_call_hierarchy::engine::l3::resolution_class::{
-                        ResolutionClass, classify,
-                    };
+                    use al_sem::engine::l3::resolution_class::{ResolutionClass, classify};
                     let rt_by_id: std::collections::HashMap<&str, &_> =
                         ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
                     let filter = std::env::var("ALDUMP_DEBUG_UNKNOWN").unwrap_or_default();
@@ -1183,10 +1169,10 @@ fn main() -> ExitCode {
         //
         // Both `--l3-call-graph-stats` and `--l3-call-graph-stats-cross-app`
         // are KEPT unchanged; this flag is now fully independent of L3.
-        use al_call_hierarchy::program::resolve::edge::{
+        use al_sem::program::resolve::edge::{
             unknown_reason_breakdown, unknown_receiver_tier_breakdown,
         };
-        use al_call_hierarchy::program::resolve::full::{
+        use al_sem::program::resolve::full::{
             coverage_holds, is_primary_scope, resolve_full_program,
         };
 
@@ -1225,8 +1211,8 @@ fn main() -> ExitCode {
         // today (see `Route::receiver_tier`'s doc); every other reason
         // reports under its own `:none` key.
         fn tier_reason_key(
-            reason: al_call_hierarchy::program::resolve::edge::UnknownReason,
-            tier: Option<al_call_hierarchy::snapshot::TrustTier>,
+            reason: al_sem::program::resolve::edge::UnknownReason,
+            tier: Option<al_sem::snapshot::TrustTier>,
         ) -> String {
             match tier {
                 Some(t) => format!("{}:{}", reason.as_str(), t.as_str()),
@@ -1343,8 +1329,7 @@ fn main() -> ExitCode {
         // graphify node-link extraction document (`{ nodes, edges, hyperedges }`),
         // consumed by graphify's `build_from_json` (see `graphify_export.rs` +
         // `U:\Git\graphify\adapter.md`). Fail-closed → snapshot build error.
-        let Some(doc) = al_call_hierarchy::program::graphify_export::export_workspace(&workspace)
-        else {
+        let Some(doc) = al_sem::program::graphify_export::export_workspace(&workspace) else {
             eprintln!("aldump: error: graphify export failed (snapshot build error)");
             return ExitCode::FAILURE;
         };
@@ -1365,8 +1350,7 @@ fn main() -> ExitCode {
         // fragments + a content-hash manifest (`{ manifest, fragments, shared }`).
         // Diff the manifest across runs → only re-process the objects whose output
         // changed (see `program::graphify_export::FragmentSet`). Fail-closed.
-        let Some(fs) =
-            al_call_hierarchy::program::graphify_export::export_workspace_fragments(&workspace)
+        let Some(fs) = al_sem::program::graphify_export::export_workspace_fragments(&workspace)
         else {
             eprintln!("aldump: error: graphify fragment export failed (snapshot build error)");
             return ExitCode::FAILURE;
@@ -1387,9 +1371,7 @@ fn main() -> ExitCode {
         // INTEGRATION-POINTS REPORT: the resolved event wiring as a "who-reacts-to-
         // what" slice scoped to the workspace's integration surface (see
         // `program::integration_report`). Fail-closed → snapshot build error.
-        let Some(report) =
-            al_call_hierarchy::program::integration_report::report_workspace(&workspace)
-        else {
+        let Some(report) = al_sem::program::integration_report::report_workspace(&workspace) else {
             eprintln!("aldump: error: integration-points report failed (snapshot build error)");
             return ExitCode::FAILURE;
         };

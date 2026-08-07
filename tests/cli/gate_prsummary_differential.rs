@@ -22,8 +22,8 @@
 
 use std::path::{Path, PathBuf};
 
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 use serde_json::Value;
 
 use crate::regen;
@@ -693,9 +693,9 @@ fn oracle_exit_precedence_preflight_wins_over_findings() {
 #[test]
 fn oracle_parse_fail_on_error_is_err() {
     // (b) parse_fail_on error propagates as Err (bin maps to CONFIG_ERROR 3).
-    use al_call_hierarchy::engine::gate::filter::Scope;
-    use al_call_hierarchy::engine::gate::run::AnalyzeArgs;
-    use al_call_hierarchy::engine::gate::run::OutputFormat;
+    use al_sem::engine::gate::filter::Scope;
+    use al_sem::engine::gate::run::AnalyzeArgs;
+    use al_sem::engine::gate::run::OutputFormat;
     let ws = corpus_dir().join("ws-txn-d47-pos-http-nocommit");
     let args = AnalyzeArgs {
         workspace: ws.to_string_lossy().to_string(),
@@ -719,8 +719,7 @@ fn oracle_parse_fail_on_error_is_err() {
     // However compute_finding_exit with an unknown severity falls back to sev_rank=0,
     // so it would exit CLEAN (not an Err). The CONFIG_ERROR (3) path is the BIN's
     // responsibility. Confirm the pipeline runs (does not panic) with an unknown value.
-    let result =
-        al_call_hierarchy::engine::gate::run::run_analyze_with_exit(&args, "engine-default");
+    let result = al_sem::engine::gate::run::run_analyze_with_exit(&args, "engine-default");
     assert!(
         result.is_ok(),
         "pipeline must not Err on an unknown fail_on string (validation is the bin's job)"

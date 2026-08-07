@@ -15,7 +15,7 @@
 //!   - modelInstanceId  = "r0"
 //!   - files            = [[name, source], ...]  →  sourceUnitId = "ws:<name>"
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve;
 
 const APP_GUID: &str = "2a000000-0000-0000-0000-0000000002aa";
 const MODEL_INSTANCE_ID: &str = "r0";

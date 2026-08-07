@@ -8,7 +8,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AL Call Hierarchy is a high-performance LSP server providing call hierarchy functionality for AL (Microsoft Dynamics 365 Business Central) language. It uses tree-sitter for parsing and provides sub-millisecond query responses via pre-computed call graphs.
+**al-sem** is a whole-program semantic analysis engine for AL (Microsoft Dynamics 365
+Business Central). Its core is a precise call-graph resolver; on top of that sit three
+products — a call-hierarchy LSP server, the `alsem` code-quality analyzer and impact-query
+CLI, and the `aldump` engine-inspection tool.
+
+**The crate was renamed from `al-call-hierarchy` to `al-sem` on 2026-08-07**, because the
+call hierarchy is one consumer of the engine rather than the whole of it. Four things
+deliberately KEEP the old name, and each will look like an oversight to a future tidier:
+
+| Still `al-call-hierarchy` | Why it must stay |
+|---------------------------|------------------|
+| the LSP server **binary** (explicit `[[bin]]` in Cargo.toml) | `.github/workflows/build-and-deploy.yml` copies it into three `claude-code-lsps/al-language-server-go*` packages, and `al-language-server-python` spawns it |
+| diagnostic `source`, the `showReferences` command id, `serverInfo.name`, the `al-call-hierarchy/*` custom LSP methods | wire strings an editor extension keys on |
+| the App Insights service name (`src/telemetry/exporter.rs`) | the join key for existing dashboards and saved queries |
+| `ANON_SALT` in `src/program/resolve/anon.rs` | frozen bytes; every committed anonymized golden was minted with them |
+
+Per-user state moved to `~/.al-sem/` (joining the analyzer's existing `cache/`) with a
+read-fallback to `~/.al-call-hierarchy/` — see `src/state_paths.rs`. The local checkout
+directory is still `U:/Git/al-call-hierarchy`; renaming the GitHub repo does not move it.
 
 ## Build Commands
 
@@ -18,7 +36,8 @@ cargo build --release          # Optimized release (full LTO, cu=1 — ~4 min fo
 cargo build --profile release-fast  # Thin LTO — USE THIS for measurement/triage loops (alsem/aldump on DO);
                                     # full --release only for the SHA-pinned north-star measure, perf_bounds, benches
 cargo test                     # Run tests
-cargo test -p al-call-hierarchy --lib <filter>   # Package is al-call-hierarchy (HYPHEN); al_call_hierarchy fails
+cargo test -p al-sem --lib <filter>   # Package is al-sem (HYPHEN); al_sem fails. Renamed from
+                                      # al-call-hierarchy 2026-08-07 — the BINARY keeps that name
 rustfmt path/to/file.rs        # Format a file (NEVER `cargo fmt` — whole-crate churn)
 scripts/ci-steps clippy        # Lint — CI's EXACT bar (release + -D warnings)
 scripts/check-goldens          # Run ALL byte-compared golden families at once (see Testing Philosophy & Goldens)
@@ -144,7 +163,11 @@ or consumed programmatically by `src/engine/l4`/`l5` (effect summaries, detector
 - `analysis.rs` - Code quality metrics (cyclomatic complexity, params, line count) for
   `--analyze` — a library module (shares `routine_complexity_ir`/
   `is_framework_invocation_attribute` with `src/lsp/lens.rs`/`diagnostics.rs`)
-- `config.rs` - Diagnostic threshold config (global `~/.al-call-hierarchy/config.json` + per-workspace)
+- `config.rs` - Diagnostic threshold config (global `~/.al-sem/config.json` + per-workspace
+  `.al-sem.json`; both fall back to the pre-rename `.al-call-hierarchy` spellings)
+- `state_paths.rs` - The one place that knows both the current and pre-rename per-user
+  state locations. **Read it before touching any `~/.al-sem/` path** — the read-fallback
+  is what keeps an install that predates the 2026-08-07 rename working
 - `app_package.rs` - Parser for .app files (extracts SymbolReference.json)
 - `dependencies.rs` - Dependency resolution from app.json and .alpackages
 - `protocol.rs` - LSP protocol URI/path conversion helpers

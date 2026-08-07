@@ -6,7 +6,7 @@
 //! message prints kind / note / input / expected / actual — locality matters
 //! because these are hashes.
 
-use al_call_hierarchy::engine::ids;
+use al_sem::engine::ids;
 use serde_json::Value;
 
 /// Parse the `parameters` array of a vector into the `(typeText, isVar)` pairs

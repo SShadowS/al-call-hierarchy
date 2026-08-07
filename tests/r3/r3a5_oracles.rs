@@ -31,7 +31,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l4::capability_cone::{
+use al_sem::engine::l4::capability_cone::{
     PRoutineFullSummary, R3a5FullSummaryProjection, project_r3a5_cross_app,
 };
 

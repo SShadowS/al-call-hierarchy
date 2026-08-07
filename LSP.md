@@ -2,6 +2,8 @@
 
 This document describes the LSP capabilities provided by `al-call-hierarchy` and the changes required for the AL LSP wrapper (`al-language-server-python`) to integrate them.
 
+> The project was renamed to **al-sem** on 2026-08-07. Nothing on the wire changed: the binary is still `al-call-hierarchy`, and so are the diagnostic `source`, the `serverInfo.name`, the `al-call-hierarchy.showReferences` command id, and every `al-call-hierarchy/*` custom method named below. An integration built against this document needs no changes.
+
 ## Server Capabilities
 
 The server advertises the following capabilities:

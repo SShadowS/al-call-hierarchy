@@ -54,7 +54,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
 use serde_json::Value;
 
 use crate::regen;
@@ -334,12 +334,10 @@ fn differential_r2_5b_call_graph_match_goldens() {
         let projection =
             match build_cross_app_l3_from_workspace(&fixture_dir, R2_5B_MODEL_INSTANCE_ID) {
                 Some(cross) => cross.project_call_graph(),
-                None => {
-                    al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection {
-                        groups: vec![],
-                        bindings: vec![],
-                    }
-                }
+                None => al_sem::engine::l3::call_graph_projection::L3CallGraphProjection {
+                    groups: vec![],
+                    bindings: vec![],
+                },
             };
         let rust_json = serde_json::to_value(&projection)
             .unwrap_or_else(|e| panic!("serialize Rust R2.5b-cg projection for {fixture}: {e}"));

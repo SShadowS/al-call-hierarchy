@@ -14,12 +14,10 @@
 //! The vectors are the oracle: a failure means the Rust port diverged from
 //! al-sem, and the fix is in the Rust code (never the vector).
 
-use al_call_hierarchy::engine::l3::al_type::normalize_al_type;
-use al_call_hierarchy::engine::l3::receiver::simple_receiver_name;
-use al_call_hierarchy::engine::l3::type_ref::{ObjectTypeRef, parse_object_type_ref};
-use al_call_hierarchy::engine::l3::type_rel::{
-    is_enumish, is_objectish, scalar_family, type_relation,
-};
+use al_sem::engine::l3::al_type::normalize_al_type;
+use al_sem::engine::l3::receiver::simple_receiver_name;
+use al_sem::engine::l3::type_ref::{ObjectTypeRef, parse_object_type_ref};
+use al_sem::engine::l3::type_rel::{is_enumish, is_objectish, scalar_family, type_relation};
 
 #[derive(serde::Deserialize)]
 struct VectorsDoc {

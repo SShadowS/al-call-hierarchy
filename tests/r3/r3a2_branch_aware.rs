@@ -16,8 +16,8 @@
 //! behavior; these tests pin the specific facts so the Rust port converges TOWARD
 //! them ahead of the Task-3 158-fixture differential.
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
-use al_call_hierarchy::engine::l4::summary::project_r3a2;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve;
+use al_sem::engine::l4::summary::project_r3a2;
 use serde_json::Value;
 
 const APP_GUID: &str = "dddddddd-dddd-dddd-dddd-dddddddddd01";
@@ -300,7 +300,7 @@ fn repeat_with_conditional_break_is_sound() {
 /// ≥1 resolved-to-dep edge produces an `opaque-callee` uncertainty.
 #[test]
 fn resolved_edge_to_bodyless_dep_callee_yields_opaque_uncertainty() {
-    use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+    use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/r2-5b-fixtures/cross-app-resolution");
     let cross = build_cross_app_l3_from_workspace(&fixture, "r2.5b")

@@ -31,6 +31,10 @@ AL source + .alpackages
 
 ## Where things live
 
+The library crate is `al-sem` (imported as `al_sem`). The call-hierarchy LSP server's
+binary is still called `al-call-hierarchy`, along with several wire strings — CLAUDE.md's
+Project Overview has the table of what deliberately kept the old name and why.
+
 | Path | What it is |
 |------|------------|
 | `crates/al-syntax/` | The grammar boundary. The **only** crate that links tree-sitter or reads a raw CST: FFI binding, generated raw vocabulary, the CST→IR lowerer, and the owned AL syntax IR every other consumer reads |
@@ -38,6 +42,7 @@ AL source + .alpackages
 | `src/program/` | The whole-program semantic graph: node identity, topology index, graph assembly, signature fingerprints |
 | `src/program/resolve/` | The call/behaviour-edge resolver — the core of the product. `full.rs` is the entry point; `builtins.rs`/`member_catalog.rs` hold the platform intrinsic catalogs; `edge.rs` holds the outcome taxonomy |
 | `src/lsp/` | The editor query surface: `LspSnapshot`, the incremental updater, position encoding, and the request handlers |
+| `src/state_paths.rs` | The only place that knows both the current (`~/.al-sem/`) and pre-rename (`~/.al-call-hierarchy/`) per-user state locations, and the read-fallback between them |
 | `src/engine/deps/` | `.app` ingestion — manifest plus `SymbolReference.json` into a dependency ABI |
 | `src/engine/l2/` | Structural body walk and feature projection over the IR |
 | `src/engine/l3/` | An older workspace symbol table and call resolver. Advisory only |

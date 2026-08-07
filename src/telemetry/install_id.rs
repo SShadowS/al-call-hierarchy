@@ -1,7 +1,13 @@
 //! Per-installation salt management.
 //!
-//! Stored at `~/.al-call-hierarchy/installation-id` (32 random bytes).
-//! Generated on first use; persists across runs.
+//! Stored at `~/.al-sem/installation-id` (32 random bytes). Generated on first use;
+//! persists across runs.
+//!
+//! An install that predates the 2026-08-07 rename has its salt at
+//! `~/.al-call-hierarchy/installation-id`. That file is read and then MIGRATED to the
+//! current location, so the anonymous identity survives the rename rather than a fresh
+//! salt making one install look like two. The legacy copy is left in place — deleting a
+//! user's file to tidy up our own rename is not this code's business.
 
 use crate::telemetry::hash::Salt;
 use anyhow::{Context, Result};
@@ -11,9 +17,16 @@ use std::path::{Path, PathBuf};
 
 const SALT_BYTES: usize = 32;
 
-/// Resolve `~/.al-call-hierarchy/installation-id`.
+const LEAF: &str = "installation-id";
+
+/// Resolve `~/.al-sem/installation-id` — the path this code WRITES.
 fn default_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".al-call-hierarchy").join("installation-id"))
+    crate::state_paths::state_path(LEAF)
+}
+
+/// Resolve `~/.al-call-hierarchy/installation-id` — the pre-rename path, read only.
+fn legacy_path() -> Option<PathBuf> {
+    crate::state_paths::legacy_state_path(LEAF)
 }
 
 /// Load existing salt, or generate-and-persist a fresh one.
@@ -22,7 +35,38 @@ pub fn load_or_create() -> (Salt, bool /* persisted */) {
     let Some(path) = default_path() else {
         return (random_salt(), false);
     };
-    load_or_create_at(&path)
+    load_or_create_migrating(&path, legacy_path().as_deref())
+}
+
+/// [`load_or_create`] with both paths injected, so the migration is testable without
+/// touching the real home directory.
+///
+/// Reads `path`; failing that, reads `legacy` and writes the salt it found to `path`;
+/// failing both, mints a fresh salt. The `persisted` flag reports whether the salt in
+/// use is now backed by `path`.
+pub fn load_or_create_migrating(path: &Path, legacy: Option<&Path>) -> (Salt, bool) {
+    if let Ok(salt) = read_salt(path) {
+        return (salt, true);
+    }
+    if let Some(legacy) = legacy
+        && let Ok(salt) = read_salt(legacy)
+    {
+        log::info!(
+            "telemetry: carrying the installation id forward from {} to {}",
+            legacy.display(),
+            path.display()
+        );
+        if let Err(e) = persist_salt(path, &salt) {
+            log::warn!(
+                "telemetry: failed to migrate installation-id to {}: {}. Continuing with the existing id, unpersisted.",
+                path.display(),
+                e
+            );
+            return (salt, false);
+        }
+        return (salt, true);
+    }
+    load_or_create_at(path)
 }
 
 pub fn load_or_create_at(path: &Path) -> (Salt, bool) {
@@ -127,5 +171,66 @@ mod tests {
         // We could not parse the existing file; we generate fresh and overwrite.
         assert_eq!(salt.len(), 32);
         assert!(persisted);
+    }
+
+    // The salt below is written literally, not obtained from `load_or_create_at`, so
+    // these tests state their own precondition and cannot be invalidated by a change to
+    // how salts are minted.
+    const KNOWN_SALT: [u8; SALT_BYTES] = [7u8; SALT_BYTES];
+
+    #[test]
+    fn a_pre_rename_salt_is_carried_forward_and_written_to_the_new_path() {
+        let dir = TempDir::new().unwrap();
+        let current = dir.path().join("current");
+        let legacy = dir.path().join("legacy");
+        fs::write(&legacy, KNOWN_SALT).unwrap();
+        assert!(!current.exists(), "precondition: nothing at the new path");
+
+        let (salt, persisted) = load_or_create_migrating(&current, Some(&legacy));
+
+        assert_eq!(
+            salt, KNOWN_SALT,
+            "the anonymous identity must survive the rename — a fresh salt would make \
+             one install look like two"
+        );
+        assert!(persisted);
+        assert!(
+            current.exists(),
+            "the salt must be migrated, not re-read forever"
+        );
+        assert_eq!(fs::read(&current).unwrap(), KNOWN_SALT);
+        assert!(legacy.exists(), "the user's old file is not ours to delete");
+    }
+
+    #[test]
+    fn the_current_salt_wins_over_a_pre_rename_one() {
+        let dir = TempDir::new().unwrap();
+        let current = dir.path().join("current");
+        let legacy = dir.path().join("legacy");
+        fs::write(&current, KNOWN_SALT).unwrap();
+        fs::write(&legacy, [9u8; SALT_BYTES]).unwrap();
+
+        let (salt, persisted) = load_or_create_migrating(&current, Some(&legacy));
+
+        assert_eq!(salt, KNOWN_SALT);
+        assert!(persisted);
+    }
+
+    #[test]
+    fn no_salt_anywhere_mints_a_fresh_one() {
+        let dir = TempDir::new().unwrap();
+        let current = dir.path().join("current");
+        let legacy = dir.path().join("legacy");
+        assert!(
+            !current.exists() && !legacy.exists(),
+            "precondition: neither"
+        );
+
+        let (salt, persisted) = load_or_create_migrating(&current, Some(&legacy));
+
+        assert_eq!(salt.len(), SALT_BYTES);
+        assert_ne!(salt, KNOWN_SALT);
+        assert!(persisted);
+        assert!(current.exists());
     }
 }

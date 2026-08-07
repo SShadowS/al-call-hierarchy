@@ -7,8 +7,8 @@
 //! through `dispatch_framework` exactly like other framework receivers — catalog
 //! hit ⇒ `builtin`, catalog miss ⇒ `Unknown { FrameworkMethodNotInCatalog }`.
 
-use al_call_hierarchy::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 const APP_GUID: &str = "3c000000-0000-0000-0000-0000000003cc";
 

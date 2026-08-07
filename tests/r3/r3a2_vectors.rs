@@ -17,9 +17,9 @@
 //! The vectors are the ORACLE: a failure means the Rust port diverged from al-sem,
 //! and the fix is in the Rust code (NEVER the vector).
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve;
-use al_call_hierarchy::engine::l4::effect_lattice::{TempStateKind, effect_key_of, merge_via};
-use al_call_hierarchy::engine::l4::summary::project_r3a2;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve;
+use al_sem::engine::l4::effect_lattice::{TempStateKind, effect_key_of, merge_via};
+use al_sem::engine::l4::summary::project_r3a2;
 use serde_json::Value;
 
 const MODEL_INSTANCE_ID: &str = "r0";

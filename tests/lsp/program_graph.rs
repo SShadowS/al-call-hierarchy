@@ -13,16 +13,14 @@ fn cdo_program_graph_is_app_qualified_and_panic_free() {
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
-    let snap = al_call_hierarchy::snapshot::SnapshotBuilder {
+    let snap = al_sem::snapshot::SnapshotBuilder {
         workspace_root: ws,
         local_providers: vec![],
     }
     .build()
     .expect("snapshot");
-    let g = al_call_hierarchy::program::build_program_graph(
-        &snap,
-        &al_call_hierarchy::program::abi_ingest::AbiCache::new(),
-    );
+    let g =
+        al_sem::program::build_program_graph(&snap, &al_sem::program::abi_ingest::AbiCache::new());
     // Print diagnostic counts for the task report.
     let apps: std::collections::BTreeSet<_> = g.objects.iter().map(|o| o.id.app).collect();
     println!(

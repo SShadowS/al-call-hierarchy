@@ -28,12 +28,8 @@
 //!
 //! Same harness as `tests/temp_state_substitution.rs` (Task 7).
 
-use al_call_hierarchy::engine::l3::l3_workspace::{
-    L3Resolved, assemble_and_resolve_workspace_default,
-};
-use al_call_hierarchy::engine::l4::summary::{
-    PDbEffect, PDbEffectTempState, R3a2Projection, project_r3a2,
-};
+use al_sem::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_workspace_default};
+use al_sem::engine::l4::summary::{PDbEffect, PDbEffectTempState, R3a2Projection, project_r3a2};
 use tempfile::TempDir;
 
 const APP_JSON: &str = r#"{

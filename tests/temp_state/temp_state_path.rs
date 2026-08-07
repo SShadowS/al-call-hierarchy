@@ -22,13 +22,11 @@
 
 use std::collections::HashMap;
 
-use al_call_hierarchy::engine::l2::features::{
-    PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
-};
-use al_call_hierarchy::engine::l3::l3_workspace::{L3Routine, RoutineVariables};
-use al_call_hierarchy::engine::l4::effect_lattice::TempStateKind;
-use al_call_hierarchy::engine::l5::finding::{EvidenceStep, SourceAnchor};
-use al_call_hierarchy::engine::l5::path_temp_resolve::resolve_temp_along_path;
+use al_sem::engine::l2::features::{PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState};
+use al_sem::engine::l3::l3_workspace::{L3Routine, RoutineVariables};
+use al_sem::engine::l4::effect_lattice::TempStateKind;
+use al_sem::engine::l5::finding::{EvidenceStep, SourceAnchor};
+use al_sem::engine::l5::path_temp_resolve::resolve_temp_along_path;
 
 // --- builders ---------------------------------------------------------------
 

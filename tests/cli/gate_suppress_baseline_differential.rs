@@ -23,12 +23,10 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::gate::baseline::serialize_baseline;
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::presets::DEFAULT_DETECTOR_NAMES;
-use al_call_hierarchy::engine::gate::run::{
-    AnalyzeArgs, OutputFormat, run_analyze, run_analyze_with_exit,
-};
+use al_sem::engine::gate::baseline::serialize_baseline;
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::presets::DEFAULT_DETECTOR_NAMES;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze, run_analyze_with_exit};
 
 use crate::regen;
 
@@ -458,7 +456,7 @@ fn serialize_baseline_matches_committed_fingerprints() {
     // Re-serialize from FindingSummary-like inputs (reuse the unit-tested helper path):
     // build summaries that only carry the fingerprints, in REVERSE order + a dup, to
     // prove the sort+dedup. We reach through the public serialize_baseline.
-    use al_call_hierarchy::engine::gate::projection::{FindingLocation, FindingSummary};
+    use al_sem::engine::gate::projection::{FindingLocation, FindingSummary};
     let mk = |fp: &str| FindingSummary {
         id: fp.to_string(),
         fingerprint: fp.to_string(),

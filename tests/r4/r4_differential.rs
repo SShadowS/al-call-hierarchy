@@ -29,9 +29,9 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::{
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::finding::{
     R4FindingsProjection, project_r4_findings, project_r4_findings_cross_app,
 };
 use serde_json::Value;

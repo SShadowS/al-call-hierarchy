@@ -15,6 +15,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Receiver;
 
+/// The Application Insights `cloud_RoleName` every event is filed under.
+///
+/// This deliberately still reads `al-call-hierarchy` after the 2026-08-07 crate rename.
+/// The service name is the join key for existing App Insights dashboards and saved
+/// queries; changing it would split every one of them at the rename point, and would buy
+/// nothing a user can see. Do not "fix" it for consistency with the crate name — that is
+/// a decision with a cost outside this repository.
+const SERVICE_NAME: &str = "al-call-hierarchy";
+
 pub struct ExporterConfig {
     pub connection_string: String,
     pub flush_interval: Duration,
@@ -59,7 +68,7 @@ async fn run(
     let tracer_provider = match new_pipeline_from_connection_string(&config.connection_string) {
         Ok(p) => p
             .with_client(http_client)
-            .with_service_name("al-call-hierarchy")
+            .with_service_name(SERVICE_NAME)
             .build_batch(opentelemetry_sdk::runtime::TokioCurrentThread),
         Err(e) => {
             log::warn!("telemetry: exporter init failed: {}; subsystem disabled", e);
@@ -68,7 +77,7 @@ async fn run(
     };
 
     global::set_tracer_provider(tracer_provider.clone());
-    let tracer = tracer_provider.tracer("al-call-hierarchy");
+    let tracer = tracer_provider.tracer(SERVICE_NAME);
 
     while let Some(env) = rx.recv().await {
         export_event(&tracer, &env, &counters);

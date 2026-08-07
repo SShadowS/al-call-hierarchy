@@ -10,10 +10,10 @@
 //!   (b) PD resolves to info on a pure temp-caller path (was "(temp state uncertain)");
 //!   (d) a non-PD terminal already Known(true) still downgrades to info (regression).
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::run_detectors;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::finding::Finding;
+use al_sem::engine::l5::registry::run_detectors;
 
 const APP_GUID: &str = "11111111-0000-0000-0000-0000000d1abc";
 

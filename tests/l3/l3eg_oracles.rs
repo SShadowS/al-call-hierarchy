@@ -54,10 +54,10 @@
 //!     `Commit`/raise before the subscriber observes) are an effect-summary property
 //!     the event graph does NOT compute → L4.
 
-use al_call_hierarchy::engine::ids::{sha256_hex, to_stable_object_id};
-use al_call_hierarchy::engine::l3::event_graph::{EventEdge, EventGraph, build_event_graph};
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
-use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+use al_sem::engine::ids::{sha256_hex, to_stable_object_id};
+use al_sem::engine::l3::event_graph::{EventEdge, EventGraph, build_event_graph};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::symbol_table::SymbolTable;
 
 const APP_GUID: &str = "2c000000-0000-0000-0000-0000000002cc";
 

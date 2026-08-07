@@ -11,8 +11,8 @@
 //! TableCaption, GetFilter, etc.) plus non-Record framework types whose ALL
 //! methods go through the call resolver.
 
-use al_call_hierarchy::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 const APP_GUID: &str = "2b000000-0000-0000-0000-0000000002bb";
 

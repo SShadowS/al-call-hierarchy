@@ -31,9 +31,7 @@ use std::path::PathBuf;
 
 use crate::regen;
 
-use al_call_hierarchy::engine::l4::capability_cone::{
-    R3a5FullSummaryProjection, project_r3a5_cross_app,
-};
+use al_sem::engine::l4::capability_cone::{R3a5FullSummaryProjection, project_r3a5_cross_app};
 use serde_json::Value;
 
 const R3A5_TEST_NAME: &str = "differential_r3a5_cross_app_summary_match_goldens";

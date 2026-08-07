@@ -8,10 +8,10 @@
 //! Suppression-direction safety (control): an UNCONDITIONAL `exit(x);` followed
 //! by a REAL statement (`Foo := 2;`) MUST still fire on the dead statement.
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::run_detectors;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::finding::Finding;
+use al_sem::engine::l5::registry::run_detectors;
 
 const APP_GUID: &str = "11111111-0000-0000-0000-000000g11abc";
 

@@ -10,8 +10,8 @@
 //! matches the native rule, and a param typed on a `TableType=Temporary` ABI table
 //! resolves to `Known(true)` via the table-level override that `resolve()` runs.
 
-use al_call_hierarchy::engine::deps::projection::project_abi_to_index;
-use al_call_hierarchy::engine::deps::symbol_reference::parse_symbol_reference;
+use al_sem::engine::deps::projection::project_abi_to_index;
+use al_sem::engine::deps::symbol_reference::parse_symbol_reference;
 
 /// A SymbolReference.json with:
 ///   - Table 50000 "Temp Buffer" carrying property {"Name":"TableType","Value":"Temporary"}
@@ -131,8 +131,8 @@ fn abi_param_reads_typedefinition_temporary() {
 /// Resolve the cross-app L3 for the synthetic dep, then return one routine's
 /// record-variables (the projected dep routine after `resolve()` over the merged
 /// whole). Uses the public projection + the test-only helper on cross_app_l3.
-fn project_and_resolve() -> al_call_hierarchy::engine::l3::l3_workspace::L3Workspace {
-    use al_call_hierarchy::engine::deps::cross_app_l3::project_dep_abi_to_l3_for_test;
+fn project_and_resolve() -> al_sem::engine::l3::l3_workspace::L3Workspace {
+    use al_sem::engine::deps::cross_app_l3::project_dep_abi_to_l3_for_test;
     let abi = parse_symbol_reference(SYMBOL_REFERENCE);
     let projected = project_abi_to_index(
         &abi,
@@ -143,7 +143,7 @@ fn project_and_resolve() -> al_call_hierarchy::engine::l3::l3_workspace::L3Works
 }
 
 fn temp_kind(
-    ws: &al_call_hierarchy::engine::l3::l3_workspace::L3Workspace,
+    ws: &al_sem::engine::l3::l3_workspace::L3Workspace,
     routine_name: &str,
 ) -> (String, Option<bool>, Option<u32>) {
     let r = ws

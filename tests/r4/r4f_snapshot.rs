@@ -17,8 +17,8 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::l5::snapshot::project_r4f_snapshot;
 
 use crate::regen;
 

@@ -22,8 +22,8 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
 use crate::regen;
 

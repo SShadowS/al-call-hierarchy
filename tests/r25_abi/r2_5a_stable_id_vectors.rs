@@ -15,8 +15,8 @@
 //! project under both modelInstanceIds, and assert against the recorded
 //! independence values.
 
-use al_call_hierarchy::engine::deps::projection::{ProjectedRoutine, project_abi_to_index};
-use al_call_hierarchy::engine::deps::symbol_reference::{
+use al_sem::engine::deps::projection::{ProjectedRoutine, project_abi_to_index};
+use al_sem::engine::deps::symbol_reference::{
     AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SubtypeTag, SymbolReferenceAbi,
     parse_symbol_reference,
 };

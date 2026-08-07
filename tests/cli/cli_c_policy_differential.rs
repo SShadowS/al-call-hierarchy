@@ -29,7 +29,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::gate::policy::pipeline::{
+use al_sem::engine::gate::policy::pipeline::{
     PolicyCheckOptions, PolicyExplainOptions, run_policy_check, run_policy_explain,
 };
 
@@ -246,12 +246,12 @@ fn explain_rule_not_found_exit_1() {
 // ===========================================================================
 
 mod oracles {
-    use al_call_hierarchy::engine::gate::policy::policy_loader::LoadResult;
-    use al_call_hierarchy::engine::gate::policy::policy_loader::load_policy_from_string;
-    use al_call_hierarchy::engine::gate::policy::policy_types::{
+    use al_sem::engine::gate::policy::policy_loader::LoadResult;
+    use al_sem::engine::gate::policy::policy_loader::load_policy_from_string;
+    use al_sem::engine::gate::policy::policy_types::{
         Predicate, PredicateOperator, PredicateValue,
     };
-    use al_call_hierarchy::engine::gate::policy::predicate_evaluator::{
+    use al_sem::engine::gate::policy::predicate_evaluator::{
         Tristate, glob_match, kleene_and, kleene_not, kleene_or,
     };
 
@@ -460,11 +460,9 @@ mod oracles {
     /// real `match_operator` via the field values.
     #[test]
     fn glob_vs_glob_in_array_asymmetry() {
-        use al_call_hierarchy::engine::gate::policy::policy_types::{
-            PredicateOperator, PredicateValue,
-        };
-        use al_call_hierarchy::engine::gate::policy::predicate_evaluator::match_operator_for_test as m;
-        use al_call_hierarchy::engine::gate::policy::predicate_fields::FieldValue;
+        use al_sem::engine::gate::policy::policy_types::{PredicateOperator, PredicateValue};
+        use al_sem::engine::gate::policy::predicate_evaluator::match_operator_for_test as m;
+        use al_sem::engine::gate::policy::predicate_fields::FieldValue;
 
         let arr = FieldValue::KnownList(vec!["api-page".to_string(), "trigger".to_string()]);
 
@@ -542,7 +540,7 @@ mod oracles {
     /// both. (`01` is a string in YAML 1.2 core → errors in both; corpus-invisible.)
     #[test]
     fn loader_version_coercion() {
-        use al_call_hierarchy::engine::gate::policy::policy_loader::load_policy_from_string;
+        use al_sem::engine::gate::policy::policy_loader::load_policy_from_string;
         for ok in [
             "version: 1\nrules: []\n",
             "version: 1.0\nrules: []\n",
@@ -592,7 +590,7 @@ mod oracles {
     // additionally pinned by this native oracle:
     #[test]
     fn coverage_gate_partial_passes_missing_status() {
-        use al_call_hierarchy::engine::gate::policy::policy_loader::load_policy_from_string;
+        use al_sem::engine::gate::policy::policy_loader::load_policy_from_string;
         // A rule with requireCoverage=complete fails a routine whose coverage is
         // "partial"; requireCoverage=partial fails only "unknown". This is the gate's
         // contract — verified via the custom fixture's cust-coverage-gate
@@ -637,7 +635,7 @@ mod oracles {
 /// 8-rule shape.
 #[test]
 fn bundled_default_policy_loads_with_expected_rule_count() {
-    use al_call_hierarchy::engine::gate::policy::policy_loader::{
+    use al_sem::engine::gate::policy::policy_loader::{
         BUNDLED_DEFAULT_POLICY_YAML, LoadResult, load_policy_from_string,
     };
     match load_policy_from_string(BUNDLED_DEFAULT_POLICY_YAML) {

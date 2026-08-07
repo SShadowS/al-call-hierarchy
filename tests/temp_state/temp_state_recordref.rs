@@ -13,7 +13,7 @@
 //! as record operations because `classify_receiver` returns `ReceiverClass::Record` for a
 //! variable whose `declaredType == "RecordRef"`.
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
 
 const APP_GUID: &str = "1c000000-0000-0000-0000-0000000c6afe";
 

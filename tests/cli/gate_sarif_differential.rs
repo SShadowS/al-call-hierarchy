@@ -25,8 +25,8 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze};
 
 use crate::regen;
 

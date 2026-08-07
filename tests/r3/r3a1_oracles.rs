@@ -29,8 +29,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l4::combined_graph::{PScc, R3a1Projection};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::l4::combined_graph::{PScc, R3a1Projection};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

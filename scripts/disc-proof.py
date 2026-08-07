@@ -20,7 +20,7 @@ import sys
 
 def run_test(filt):
     r = subprocess.run(
-        ["cargo", "test", "-p", "al-call-hierarchy", "--lib", filt],
+        ["cargo", "test", "-p", "al-sem", "--lib", filt],
         capture_output=True, text=True,
     )
     return r.returncode == 0, r.stdout + r.stderr

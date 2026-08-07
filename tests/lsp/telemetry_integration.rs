@@ -1,9 +1,9 @@
 //! End-to-end tests: queue overflow accounting, dedup workspace isolation,
 //! shutdown drains and emits summary.
 
-use al_call_hierarchy::telemetry::counters::Counters;
-use al_call_hierarchy::telemetry::events::LeafKind;
-use al_call_hierarchy::telemetry::pipeline::Pipeline;
+use al_sem::telemetry::counters::Counters;
+use al_sem::telemetry::events::LeafKind;
+use al_sem::telemetry::pipeline::Pipeline;
 use std::sync::Arc;
 
 #[tokio::test(flavor = "current_thread")]
@@ -39,7 +39,7 @@ async fn queue_full_distinguishable_from_dedup() {
 #[cfg(feature = "test-runtime")]
 #[test]
 fn record_resolution_miss_increments_counters() {
-    use al_call_hierarchy::telemetry::{
+    use al_sem::telemetry::{
         CallContext, CallPattern, CalleeSource, CallerContext, ObjectType, ResolutionFailure,
         record_resolution_miss, testing,
     };

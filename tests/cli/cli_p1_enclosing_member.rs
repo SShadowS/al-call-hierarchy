@@ -15,7 +15,7 @@
 //!   (d) RE-4 — an escaped-quote / mixed-case field name → the unescaped logical name.
 //!   (e) a true object-level trigger (`OnRun`) → `enclosing_member` is `None`.
 
-use al_call_hierarchy::engine::l3::l3_workspace::{L3Routine, L3Workspace, assemble_workspace};
+use al_sem::engine::l3::l3_workspace::{L3Routine, L3Workspace, assemble_workspace};
 
 const APP_GUID: &str = "11111111-1111-1111-1111-111111111111";
 
@@ -123,8 +123,8 @@ fn two_field_on_validate_distinct_member_and_stable_id() {
     let legacy: Vec<String> = validates
         .iter()
         .map(|r| {
-            al_call_hierarchy::engine::ids::to_stable_routine_id_from_parts(
-                &al_call_hierarchy::engine::ids::to_stable_object_id(&r.object_id),
+            al_sem::engine::ids::to_stable_routine_id_from_parts(
+                &al_sem::engine::ids::to_stable_object_id(&r.object_id),
                 &r.normalized_signature_hash,
                 None,
             )

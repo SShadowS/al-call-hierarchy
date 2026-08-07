@@ -22,7 +22,7 @@
 
 use std::path::{Path, PathBuf};
 
-use al_call_hierarchy::engine::l5::digest_cli::run_digest_pipeline;
+use al_sem::engine::l5::digest_cli::run_digest_pipeline;
 
 use crate::regen;
 

@@ -16,10 +16,8 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::return_summary::{
-    R4FReturnSummaryProjection, project_r4f_return_summaries,
-};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::return_summary::{R4FReturnSummaryProjection, project_r4f_return_summaries};
 
 use crate::regen;
 

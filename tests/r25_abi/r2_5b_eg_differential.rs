@@ -44,7 +44,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
+use al_sem::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
 use serde_json::Value;
 
 use crate::regen;
@@ -323,7 +323,7 @@ fn differential_r2_5b_event_graph_match_goldens() {
         let projection =
             match build_cross_app_l3_from_workspace(&fixture_dir, R2_5B_MODEL_INSTANCE_ID) {
                 Some(cross) => cross.project_event_graph(),
-                None => al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection {
+                None => al_sem::engine::l3::event_graph::L3EventGraphProjection {
                     events: vec![],
                     edges: vec![],
                 },

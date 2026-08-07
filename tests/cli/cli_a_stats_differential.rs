@@ -19,9 +19,9 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::registry::{run_detectors, serialize_detector_stats};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::registry::{run_detectors, serialize_detector_stats};
 
 use crate::regen;
 
@@ -166,7 +166,7 @@ fn run_stats(fixture: &str, names: &[&str]) -> String {
             // Workspace assembly failed — produce a stats array of empty stats for
             // each selected detector (mirrors al-sem's behaviour on an empty/invalid
             // workspace: each detector sees 0 candidates and emits 0 findings).
-            use al_call_hierarchy::engine::l5::registry::DetectorStats;
+            use al_sem::engine::l5::registry::DetectorStats;
             let stats: Vec<DetectorStats> = selected
                 .iter()
                 .map(|d| DetectorStats::new(d.name.as_str(), 0, 0))

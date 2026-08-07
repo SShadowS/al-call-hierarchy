@@ -53,10 +53,10 @@
 //! hand_stated_id_collision_keeps_a_real_summary_and_derived_row`, which took the
 //! same remedy for the sibling defect one module over.
 
-use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::run_detectors;
+use al_sem::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::finding::Finding;
+use al_sem::engine::l5::registry::run_detectors;
 
 const APP_GUID: &str = "11111111-0000-0000-0000-0000000g18ab";
 

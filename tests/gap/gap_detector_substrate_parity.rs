@@ -24,12 +24,12 @@
 //! A detector whose findings are empty on ALL inputs for both contexts contributes only
 //! weak coverage — acceptable for this wave (noted in the Task 10 commit message).
 
-use al_call_hierarchy::engine::l3::l3_workspace::{
+use al_sem::engine::l3::l3_workspace::{
     assemble_and_resolve_default, assemble_and_resolve_workspace_default,
 };
-use al_call_hierarchy::engine::l5::detector_context::build_detector_context;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::registry::{Detector, substrate};
+use al_sem::engine::l5::detector_context::build_detector_context;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::registry::{Detector, substrate};
 use std::path::PathBuf;
 
 const PARITY_FIXTURES: &[&str] = &[
@@ -104,7 +104,7 @@ fn corpus_dir(fixture: &str) -> PathBuf {
 
 /// Assert full-vs-minimal parity for every detector over one resolved workspace.
 fn assert_parity(
-    resolved: &al_call_hierarchy::engine::l3::l3_workspace::L3Resolved,
+    resolved: &al_sem::engine::l3::l3_workspace::L3Resolved,
     detectors: &[Detector],
     label: &str,
 ) {

@@ -17,8 +17,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::l5::digest::project_r4f_scoped_guarantees;
 
 use crate::regen;
 

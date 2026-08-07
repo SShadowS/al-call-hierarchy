@@ -20,14 +20,12 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::gate::cbor::CborValue;
-use al_call_hierarchy::engine::gate::diff::cli::{DiffCliOptions, run_diff};
-use al_call_hierarchy::engine::gate::diff::format::format_diff;
-use al_call_hierarchy::engine::gate::diff::renames::parse_rename_overlay;
-use al_call_hierarchy::engine::gate::diff::{
-    CoveragePolicy, DiffEngineOptions, Severity, run_diff_engine,
-};
-use al_call_hierarchy::engine::gate::snapshot_deserialize::{SnapshotFormat, deserialize_snapshot};
+use al_sem::engine::gate::cbor::CborValue;
+use al_sem::engine::gate::diff::cli::{DiffCliOptions, run_diff};
+use al_sem::engine::gate::diff::format::format_diff;
+use al_sem::engine::gate::diff::renames::parse_rename_overlay;
+use al_sem::engine::gate::diff::{CoveragePolicy, DiffEngineOptions, Severity, run_diff_engine};
+use al_sem::engine::gate::snapshot_deserialize::{SnapshotFormat, deserialize_snapshot};
 
 use crate::regen;
 
@@ -119,7 +117,7 @@ fn run_engine(
     old: &CborValue,
     new: &CborValue,
     policy: CoveragePolicy,
-) -> al_call_hierarchy::engine::gate::diff::DiffEngineResult {
+) -> al_sem::engine::gate::diff::DiffEngineResult {
     run_diff_engine(
         old,
         new,
@@ -187,11 +185,9 @@ fn diff_rename_variant_from_overlay_byte_match() {
 }
 
 fn compose_ws(dir: &std::path::Path) -> CborValue {
-    use al_call_hierarchy::engine::gate::model_instance_id::compute_gate_model_instance_id;
-    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace;
-    use al_call_hierarchy::engine::l5::snapshot_full::{
-        FullSnapshotOptions, compose_full_snapshot,
-    };
+    use al_sem::engine::gate::model_instance_id::compute_gate_model_instance_id;
+    use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace;
+    use al_sem::engine::l5::snapshot_full::{FullSnapshotOptions, compose_full_snapshot};
     let model_id = compute_gate_model_instance_id(dir).expect("modelInstanceId");
     let resolved = assemble_and_resolve_workspace(dir, &model_id, false).expect("resolve");
     let opts = FullSnapshotOptions {
@@ -410,7 +406,7 @@ fn cbor_and_gz_roundtrip_drives_identical_diff() {
         );
         return;
     }
-    use al_call_hierarchy::engine::l5::snapshot_full::{serialize_cbor, serialize_cbor_gz};
+    use al_sem::engine::l5::snapshot_full::{serialize_cbor, serialize_cbor_gz};
 
     let empty: Vec<CborValue> = Vec::new();
     let pair = "abi-signature-changed";
@@ -508,7 +504,7 @@ fn engine(
     old: &CborValue,
     new: &CborValue,
     policy: CoveragePolicy,
-) -> al_call_hierarchy::engine::gate::diff::DiffEngineResult {
+) -> al_sem::engine::gate::diff::DiffEngineResult {
     run_diff_engine(
         old,
         new,
@@ -521,9 +517,9 @@ fn engine(
 }
 
 fn find_kind<'a>(
-    r: &'a al_call_hierarchy::engine::gate::diff::DiffEngineResult,
+    r: &'a al_sem::engine::gate::diff::DiffEngineResult,
     kind: &str,
-) -> &'a al_call_hierarchy::engine::gate::diff::DiffFinding {
+) -> &'a al_sem::engine::gate::diff::DiffFinding {
     r.findings
         .iter()
         .find(|f| f.kind.as_str() == kind)

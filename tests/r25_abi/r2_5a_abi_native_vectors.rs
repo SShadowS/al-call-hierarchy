@@ -14,8 +14,8 @@
 //! the full internal `routineId` (under the file's `modelInstanceId`) EQUAL the
 //! vector's recorded values.
 
-use al_call_hierarchy::engine::deps::projection::{abi_canonical_string, project_abi_to_index};
-use al_call_hierarchy::engine::deps::symbol_reference::{
+use al_sem::engine::deps::projection::{abi_canonical_string, project_abi_to_index};
+use al_sem::engine::deps::symbol_reference::{
     AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SubtypeTag, SymbolReferenceAbi,
 };
 use serde_json::Value;

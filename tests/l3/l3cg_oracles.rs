@@ -47,10 +47,10 @@
 //!     R2b does not compute (R2b stops at the resolved call edges). They land where
 //!     reachability is computed (the L4/combined-graph gate), NOT here.
 
-use al_call_hierarchy::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
-use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-use al_call_hierarchy::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
-use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+use al_sem::engine::l3::call_graph_projection::{L3CallGraphProjection, PCallEdge};
+use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+use al_sem::engine::l3::l3_workspace::{L3Resolved, assemble_and_resolve_default};
+use al_sem::engine::l3::symbol_table::SymbolTable;
 
 const APP_GUID: &str = "2b000000-0000-0000-0000-0000000002bb";
 
@@ -443,9 +443,7 @@ fn edge_sort_is_deterministic_byte_order_stable() {
 
 #[test]
 fn every_builtin_member_edge_method_is_in_the_catalog() {
-    use al_call_hierarchy::engine::l3::member_builtins::{
-        classify_receiver, member_builtin_disposition,
-    };
+    use al_sem::engine::l3::member_builtins::{classify_receiver, member_builtin_disposition};
 
     // A workspace exercising Record + framework + RecordRef intrinsics. (FieldNo /
     // GetFilter are Record call-site intrinsics; FindSet/SetRange are L2

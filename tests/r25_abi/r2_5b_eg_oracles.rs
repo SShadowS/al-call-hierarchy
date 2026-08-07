@@ -34,10 +34,8 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::cross_app_l3::{
-    CrossAppL3, build_cross_app_l3_from_workspace,
-};
-use al_call_hierarchy::engine::l3::event_graph::{L3EventGraphProjection, PEventEdge};
+use al_sem::engine::deps::cross_app_l3::{CrossAppL3, build_cross_app_l3_from_workspace};
+use al_sem::engine::l3::event_graph::{L3EventGraphProjection, PEventEdge};
 
 const MODEL_INSTANCE_ID: &str = "r2.5b";
 const DEP_CORE: &str = "dddddddd-0000-0000-0000-000000000001";

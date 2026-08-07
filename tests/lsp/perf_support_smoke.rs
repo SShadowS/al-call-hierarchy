@@ -33,11 +33,11 @@
 #[path = "../perf_support/mod.rs"]
 mod perf_support;
 
-use al_call_hierarchy::lsp::encoding::PositionEncoding;
-use al_call_hierarchy::lsp::handlers::{self, ItemData};
-use al_call_hierarchy::lsp::snapshot::LspSnapshot;
-use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
-use al_call_hierarchy::protocol::path_to_uri;
+use al_sem::lsp::encoding::PositionEncoding;
+use al_sem::lsp::handlers::{self, ItemData};
+use al_sem::lsp::snapshot::LspSnapshot;
+use al_sem::lsp::updater::{ChangeEvent, Rung, Updater};
+use al_sem::protocol::path_to_uri;
 use perf_support::{
     EVENT_ROUTINES_PER_FILE, HUB_INDEX, PROCS_PER_FILE, file_name, generate_corpus,
 };

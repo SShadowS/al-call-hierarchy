@@ -6,10 +6,10 @@
 //! Companion gate: d3 (missing-SetLoadFields) must NOT fire on the same implicit
 //! Rec field reads — the platform already loads Rec in those triggers.
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_default;
-use al_call_hierarchy::engine::l5::detectors::registered_detectors;
-use al_call_hierarchy::engine::l5::finding::Finding;
-use al_call_hierarchy::engine::l5::registry::run_detectors;
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_default;
+use al_sem::engine::l5::detectors::registered_detectors;
+use al_sem::engine::l5::finding::Finding;
+use al_sem::engine::l5::registry::run_detectors;
 
 const APP_GUID: &str = "11111111-0000-0000-0000-00000d22abcd";
 

@@ -21,13 +21,13 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::app_manifest::parse_app_manifest_xml;
-use al_call_hierarchy::engine::deps::app_package_zip::{
+use al_sem::engine::deps::app_manifest::parse_app_manifest_xml;
+use al_sem::engine::deps::app_package_zip::{
     extract_navx_manifest_xml, extract_symbol_reference_json,
 };
-use al_call_hierarchy::engine::deps::merged_index::build_merged_index_from_path;
-use al_call_hierarchy::engine::deps::symbol_reference::{AbiObject, parse_symbol_reference};
-use al_call_hierarchy::engine::ids::{ParamSpec, canonical_routine_signature, sha256_hex};
+use al_sem::engine::deps::merged_index::build_merged_index_from_path;
+use al_sem::engine::deps::symbol_reference::{AbiObject, parse_symbol_reference};
+use al_sem::engine::ids::{ParamSpec, canonical_routine_signature, sha256_hex};
 use serde_json::Value;
 
 fn repo_root() -> PathBuf {

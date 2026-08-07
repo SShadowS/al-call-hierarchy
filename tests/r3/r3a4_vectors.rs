@@ -23,7 +23,7 @@
 //! CONSUMER LOGIC at vector parity; the exact `dep:<artifactKey>` id-string
 //! differential vs the goldens is Task 3.
 
-use al_call_hierarchy::engine::deps::dep_artifact_l4::{
+use al_sem::engine::deps::dep_artifact_l4::{
     ConsumerModel, DEP_ORDER_INDEX_SCHEMA_VERSION, DepOrderIndexStamp, build_dep_artifact_l4,
     collect_cited_dep_evidence, collect_dep_order_index, inject_intra_app_call_edges,
     is_dep_order_index_stamp_fresh,
@@ -50,7 +50,7 @@ fn load_vectors() -> Value {
 /// the workspace builds; here the dep is the whole merged routine set so the
 /// both-ends-in-model guard admits the dep edges).
 fn build_consumed() -> (
-    al_call_hierarchy::engine::deps::dep_artifact_l4::DependencyArtifactL4,
+    al_sem::engine::deps::dep_artifact_l4::DependencyArtifactL4,
     ConsumerModel,
 ) {
     let bytes = fixture_app_bytes();
@@ -383,14 +383,14 @@ fn producer_payload_structural_parity_with_golden() {
         assert!(
             matches!(
                 rs.has_normal_return_path,
-                al_call_hierarchy::engine::deps::dep_artifact_l4::TriBool::True
+                al_sem::engine::deps::dep_artifact_l4::TriBool::True
             ),
             "hasNormalReturnPath true"
         );
         assert!(
             matches!(
                 rs.all_paths_error,
-                al_call_hierarchy::engine::deps::dep_artifact_l4::TriBool::False
+                al_sem::engine::deps::dep_artifact_l4::TriBool::False
             ),
             "allPathsError false"
         );

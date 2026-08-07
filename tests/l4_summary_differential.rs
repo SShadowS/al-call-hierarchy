@@ -30,10 +30,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::l4::summary::RoutineSummary;
-use al_call_hierarchy::engine::l4::summary_runner::{
-    FieldIndex, compute_summaries_v2_with_leaves_core,
-};
+use al_sem::engine::l4::summary::RoutineSummary;
+use al_sem::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_with_leaves_core};
 
 // Task 9 (l4-summary-fixpoint-redesign): the CDO_WS/ENFORCE_CDO_WS gating helper
 // lives in `tests/common/cdo.rs` (shared with `program_resolve_harness.rs` and
@@ -251,12 +249,12 @@ fn sha256_hex(s: &str) -> String {
 /// ```
 #[test]
 fn cdo_whole_program_v2_matches_frozen_digest() {
-    use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-    use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
-    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-    use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
-    use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
-    use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
+    use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use al_sem::engine::l3::event_graph::build_event_graph;
+    use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use al_sem::engine::l3::symbol_table::SymbolTable;
+    use al_sem::engine::l4::combined_graph::build_combined_graph;
+    use al_sem::engine::l4::scc::{SccInputGraph, tarjan_scc};
 
     let Some(ws_path) = cdo_ws_or_enforce() else {
         return;
@@ -391,15 +389,15 @@ fn cdo_whole_program_v2_matches_frozen_digest() {
 mod reverse_index_differential {
     use std::collections::{HashMap, HashSet, VecDeque};
 
-    use al_call_hierarchy::engine::l4::combined_graph::CombinedGraph;
-    use al_call_hierarchy::engine::l4::effect_query::DbEffectQuery;
-    use al_call_hierarchy::engine::l4::effect_store::SummaryBundle;
-    use al_call_hierarchy::engine::l4::effect_universe::{EffectId, EffectIdentity};
-    use al_call_hierarchy::engine::l4::reverse_index::{ReverseEffectIndex, class_of};
-    use al_call_hierarchy::engine::l4::routine_interner::RoutineIx;
-    use al_call_hierarchy::engine::l4::scc::SccResult;
-    use al_call_hierarchy::engine::l4::summary::RoutineSummary;
-    use al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
+    use al_sem::engine::l4::combined_graph::CombinedGraph;
+    use al_sem::engine::l4::effect_query::DbEffectQuery;
+    use al_sem::engine::l4::effect_store::SummaryBundle;
+    use al_sem::engine::l4::effect_universe::{EffectId, EffectIdentity};
+    use al_sem::engine::l4::reverse_index::{ReverseEffectIndex, class_of};
+    use al_sem::engine::l4::routine_interner::RoutineIx;
+    use al_sem::engine::l4::scc::SccResult;
+    use al_sem::engine::l4::summary::RoutineSummary;
+    use al_sem::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
 
     // -----------------------------------------------------------------------
     // The oracle.
@@ -1032,15 +1030,15 @@ mod reverse_index_differential {
 fn cdo_reverse_index_matches_slow_oracle() {
     use std::collections::BTreeMap;
 
-    use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-    use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
-    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-    use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
-    use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
-    use al_call_hierarchy::engine::l4::reverse_index::ReverseEffectIndex;
-    use al_call_hierarchy::engine::l4::routine_interner::RoutineIx;
-    use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
-    use al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
+    use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use al_sem::engine::l3::event_graph::build_event_graph;
+    use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use al_sem::engine::l3::symbol_table::SymbolTable;
+    use al_sem::engine::l4::combined_graph::build_combined_graph;
+    use al_sem::engine::l4::reverse_index::ReverseEffectIndex;
+    use al_sem::engine::l4::routine_interner::RoutineIx;
+    use al_sem::engine::l4::scc::{SccInputGraph, tarjan_scc};
+    use al_sem::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
     use reverse_index_differential as diff;
 
     let Some(ws_path) = cdo_ws_or_enforce() else {
@@ -1210,18 +1208,16 @@ fn cdo_reverse_index_matches_slow_oracle() {
 mod fixtures {
     use std::collections::HashMap;
 
-    use al_call_hierarchy::engine::l2::features::{
+    use al_sem::engine::l2::features::{
         PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
     };
-    use al_call_hierarchy::engine::l3::call_resolver::UpgradedBinding;
-    use al_call_hierarchy::engine::l3::l3_workspace::{
-        L3RecordOperation, L3Routine, RoutineVariables,
-    };
-    use al_call_hierarchy::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
-    use al_call_hierarchy::engine::l4::effect_lattice::{TempStateKind, effect_key_of};
-    use al_call_hierarchy::engine::l4::scc::{Scc, SccResult};
-    use al_call_hierarchy::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
-    use al_call_hierarchy::engine::l4::summary_runner::FieldIndex;
+    use al_sem::engine::l3::call_resolver::UpgradedBinding;
+    use al_sem::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, RoutineVariables};
+    use al_sem::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
+    use al_sem::engine::l4::effect_lattice::{TempStateKind, effect_key_of};
+    use al_sem::engine::l4::scc::{Scc, SccResult};
+    use al_sem::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
+    use al_sem::engine::l4::summary_runner::FieldIndex;
 
     type FixtureOut = (
         Vec<L3Routine>,

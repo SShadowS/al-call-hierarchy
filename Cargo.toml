@@ -1,12 +1,16 @@
 [package]
-name = "al-call-hierarchy"
+# The crate is `al-sem` — the whole-program semantic engine. The call-hierarchy LSP
+# server is one CONSUMER of it (and keeps its own binary name below, because three
+# external packages spawn that binary by name). The repo carried the consumer's name
+# until the 2026-08-07 rename; the library name now matches what the engine is.
+name = "al-sem"
 default-run = "al-call-hierarchy"
 version = "1.0.0"
 edition = "2024"
 authors = ["SShadowS"]
-description = "Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter"
+description = "Whole-program semantic analysis engine for AL (Microsoft Dynamics 365 Business Central): call-graph resolution, an LSP server, and a code-quality analyzer"
 license = "GPL-3.0"
-repository = "https://github.com/SShadowS/al-call-hierarchy"
+repository = "https://github.com/SShadowS/al-sem"
 
 # Owned-syntax-IR migration (Phase 5 — SEALED): `al-syntax` is the ONLY crate that
 # compiles + links the tree-sitter grammar. This engine/CLI crate consumes the owned
@@ -164,6 +168,15 @@ sha2 = "0.10"
 name = "telemetry-spike"
 path = "tools/telemetry-spike/main.rs"
 required-features = ["telemetry"]
+
+# The call-hierarchy LSP server. Named EXPLICITLY (rather than inherited from the
+# package name, as it was before the crate became `al-sem`) because the binary name is
+# an external contract: `.github/workflows/build-and-deploy.yml` copies it into the three
+# `claude-code-lsps/al-language-server-go*` packages, and the `al-language-server-python`
+# wrapper spawns it. Renaming it would break those; renaming the crate does not.
+[[bin]]
+name = "al-call-hierarchy"
+path = "src/main.rs"
 
 # R0 differential-harness producer — emits the object/routine identity subset
 # as JSON for the Rust-port parity check. Additive; not part of the LSP surface.

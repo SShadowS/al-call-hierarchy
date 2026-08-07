@@ -15,14 +15,12 @@
 //! L3-INDEPENDENT fixture tests (`event_fixture_two_stage_join`,
 //! `implicit_trigger_fixture_resolves_exact_target_set`).
 
-use al_call_hierarchy::program::node::{
-    AppRegistry, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId,
-};
-use al_call_hierarchy::program::resolve::differential::{
+use al_sem::program::node::{AppRegistry, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId};
+use al_sem::program::resolve::differential::{
     SiteMatch, canonical_call_edge_for_test, match_sites, project_fresh_event_rows,
     verify_event_subscriber_route,
 };
-use al_call_hierarchy::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
+use al_sem::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
 
 // Task T0.2: the CDO_WS/ENFORCE_CDO_WS gating helper is shared with
 // `program_graph.rs` and `snapshot_robustness.rs` via `#[path]` inclusion —
@@ -42,8 +40,8 @@ mod regen;
 /// this. Panics if the one build fails (every consumer would have failed
 /// identically). `None` == the usual CDO_WS skip.
 struct CdoShared {
-    ctx: al_call_hierarchy::program::resolve::full::ProgramContext,
-    report: al_call_hierarchy::program::resolve::full::ProgramReport,
+    ctx: al_sem::program::resolve::full::ProgramContext,
+    report: al_sem::program::resolve::full::ProgramReport,
 }
 
 static CDO_SHARED: std::sync::OnceLock<Option<CdoShared>> = std::sync::OnceLock::new();
@@ -52,9 +50,9 @@ fn cdo_shared() -> Option<&'static CdoShared> {
     CDO_SHARED
         .get_or_init(|| {
             let ws = cdo_ws_or_enforce()?;
-            let ctx = al_call_hierarchy::program::resolve::full::build_context(&ws)
+            let ctx = al_sem::program::resolve::full::build_context(&ws)
                 .expect("shared CDO substrate: build_context must succeed on CDO_WS");
-            let report = al_call_hierarchy::program::resolve::full::resolve_full_program_with(&ctx);
+            let report = al_sem::program::resolve::full::resolve_full_program_with(&ctx);
             Some(CdoShared { ctx, report })
         })
         .as_ref()
@@ -430,15 +428,15 @@ fn event_teeth_excess_params_fails() {
 // Tests 12–16: ABI ingestion-integrity + Histogram taxonomy split
 // ---------------------------------------------------------------------------
 
-use al_call_hierarchy::engine::deps::symbol_reference::{
+use al_sem::engine::deps::symbol_reference::{
     AbiEventKind as SrAbiEventKind, AbiObject, AbiParameter, AbiRoutine, SubtypeTag,
     SymbolReferenceAbi,
 };
-use al_call_hierarchy::program::node::AppRef;
-use al_call_hierarchy::program::resolve::abi_check::{
+use al_sem::program::node::AppRef;
+use al_sem::program::resolve::abi_check::{
     AbiIntegrityReport, RawAbiIndex, abi_ingestion_integrity, run_abi_integrity_check_on,
 };
-use al_call_hierarchy::program::resolve::edge::{
+use al_sem::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
     EdgeKind, Evidence, Histogram, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
     UnknownReason, Witness,
@@ -947,7 +945,7 @@ fn abi_ingestion_integrity_cdo_gate() {
 
     // Also compute and print the histogram split.
     {
-        use al_call_hierarchy::program::resolve::stub::resolve_program;
+        use al_sem::program::resolve::stub::resolve_program;
 
         {
             let graph = shared.ctx.graph();
@@ -1089,7 +1087,7 @@ fn event_teeth_non_circularity_reads_raw_ir() {
 // Tests 11+: 1B.3a Task 3 — obligation coverage + resolve_full_program
 // ---------------------------------------------------------------------------
 
-use al_call_hierarchy::program::resolve::full::{
+use al_sem::program::resolve::full::{
     ClassifiedEdge, Coverage, ObligationId, ProgramReport, coverage_holds, is_primary_scope,
     resolve_full_program,
 };
@@ -1174,7 +1172,7 @@ fn full_program_fixture_coverage_holds_and_histogram_is_correct() {
 /// split leaked behavior.
 #[test]
 fn resolve_full_program_with_matches_path_wrapper_on_fixture() {
-    use al_call_hierarchy::program::resolve::full::{build_context, resolve_full_program_with};
+    use al_sem::program::resolve::full::{build_context, resolve_full_program_with};
 
     let fixture =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/semantic-golden");
@@ -1280,10 +1278,8 @@ fn object_name_shape_quoted_digit_name_resolves_to_named_object_not_numeric_id()
 /// the contract check is active and not vacuously true.
 #[test]
 fn dropped_obligation_is_caught_by_coverage_contract() {
-    use al_call_hierarchy::program::node::{
-        AppRef, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId,
-    };
-    use al_call_hierarchy::program::resolve::edge::{CanonicalSpan, SourcePos};
+    use al_sem::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId};
+    use al_sem::program::resolve::edge::{CanonicalSpan, SourcePos};
 
     fn make_rid(name: &str) -> RoutineNodeId {
         RoutineNodeId {
@@ -1593,7 +1589,7 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // breakdown while `unknown` itself climbs undetected. Gated here (not just
     // fixtures) because CDO is the only corpus large/diverse enough to have
     // caught the real +10 Task-1.5 soundness correction in the first place.
-    use al_call_hierarchy::program::resolve::edge::unknown_reason_breakdown;
+    use al_sem::program::resolve::edge::unknown_reason_breakdown;
     let whole_by_reason = unknown_reason_breakdown(report.edges.iter().map(|ce| &ce.edge));
     let whole_by_reason_sum: usize = whole_by_reason.values().sum();
     assert_eq!(
@@ -2859,7 +2855,7 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 // Tests 14–16: 1B.3a Task 4 — L3-validated semantic golden + applicability
 // ---------------------------------------------------------------------------
 
-use al_call_hierarchy::program::resolve::semantic_golden::{
+use al_sem::program::resolve::semantic_golden::{
     ANON_GOLDEN_SCHEMA_VERSION, AdjudicatedOverride, GoldenSiteKey, SemanticGolden,
     VERDICT_L3_ERROR_INTRINSIC, adjudicated_overrides_path, cdo_anon_golden_path,
     cdo_event_anon_golden_path, cdo_trigger_anon_golden_path, load_adjudicated_overrides,
@@ -2876,11 +2872,9 @@ use al_call_hierarchy::program::resolve::semantic_golden::{
 // the `source_sha256` drift check. Deliberately NOT importing
 // `resolve_full_program`/`Edge`/`CanonicalEdge` anywhere near the adjudicator
 // — see `cdo_genuine_wrong_is_precedence_adjudicated`'s doc comment.
-use al_call_hierarchy::program::resolve::builtins::is_global_builtin;
-use al_call_hierarchy::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
-use al_call_hierarchy::program::resolve::receiver::{
-    FrameworkKind, ParsedType, classify_type_text,
-};
+use al_sem::program::resolve::builtins::is_global_builtin;
+use al_sem::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
+use al_sem::program::resolve::receiver::{FrameworkKind, ParsedType, classify_type_text};
 use sha2::{Digest, Sha256};
 
 // 1B.3b Task 1 originally defined `cdo_ws_or_enforce()` here, scoped to only
@@ -3185,10 +3179,10 @@ fn route_applicability_zero_violations() {
 #[test]
 #[ignore]
 fn task2_dump_argtype_dispatch_flips_on_cdo() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::program::resolve::index::ResolveIndex;
-    use al_call_hierarchy::snapshot::SnapshotBuilder;
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
+    use al_sem::program::resolve::index::ResolveIndex;
+    use al_sem::snapshot::SnapshotBuilder;
 
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
@@ -3277,7 +3271,7 @@ fn task3_dump_untracked_receiver_sites_on_cdo() {
         return;
     };
     let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
-    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
     let mut lines: Vec<String> = Vec::new();
     for ce in &report.edges {
         if classify_obligation(&ce.edge) != ObligationOutcome::Unknown {
@@ -3322,7 +3316,7 @@ fn task3_dump_untracked_receiver_sites_on_cdo() {
 #[test]
 #[ignore]
 fn task3_dump_remaining_ambiguous_resolved_sites_on_cdo() {
-    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
@@ -4707,7 +4701,7 @@ fn find_app_by_guid(ws: &std::path::Path, guid: &str) -> std::path::PathBuf {
         if path.extension().and_then(|e| e.to_str()) != Some("app") {
             continue;
         }
-        if let Ok(pkg) = al_call_hierarchy::app_package::extract_app_package(&path)
+        if let Ok(pkg) = al_sem::app_package::extract_app_package(&path)
             && pkg.metadata.app_id.eq_ignore_ascii_case(guid)
         {
             return path;
@@ -4732,13 +4726,12 @@ fn target_app_declares_procedure(
     object_lc: &str,
     routine_lc: &str,
 ) -> Option<String> {
-    let files = al_call_hierarchy::snapshot::embedded::extract_embedded_source(app_path)
-        .unwrap_or_else(|e| {
-            panic!(
-                "cannot extract embedded source from {}: {e}",
-                app_path.display()
-            )
-        });
+    let files = al_sem::snapshot::embedded::extract_embedded_source(app_path).unwrap_or_else(|e| {
+        panic!(
+            "cannot extract embedded source from {}: {e}",
+            app_path.display()
+        )
+    });
     let object_header_needle = format!(" {object_lc} ");
     for f in &files {
         let lc = f.text.to_ascii_lowercase();
@@ -5715,7 +5708,7 @@ fn ws_overload_collision_report() -> ProgramReport {
 /// it to a confident single `Source` route, `DispatchShape::Exact`.
 #[test]
 fn ws_overload_collision_ambiguous_call_becomes_resolved_to_the_integer_overload() {
-    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
     let report = ws_overload_collision_report();
     let edges = edges_for_caller(&report, "callambiguous");
@@ -5795,7 +5788,7 @@ fn ws_overload_collision_ambiguous_call_becomes_resolved_to_the_integer_overload
 /// adjudicated consequence.
 #[test]
 fn ws_overload_collision_untyped_arg_call_picks_integer_overload_via_call_result_arg() {
-    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
     let report = ws_overload_collision_report();
     let edges = edges_for_caller(&report, "callambiguousuntyped");
@@ -5874,9 +5867,9 @@ fn ws_overload_collision_untyped_arg_call_picks_integer_overload_via_call_result
 /// silently collapsed to one entry with no record.
 #[test]
 fn ws_overload_collision_graph_preserves_both_overloads() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::snapshot::SnapshotBuilder;
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
+    use al_sem::snapshot::SnapshotBuilder;
 
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/r0-corpus/ws-overload-collision");
@@ -6036,7 +6029,7 @@ fn ws_overload_argtype_run_import_picks_instream_overload() {
 /// "must not fabricate a resolution here" guard.
 #[test]
 fn ws_overload_argtype_run_ambiguous_stays_ambiguous_resolved() {
-    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
     let report = ws_overload_argtype_report();
     let edge = &outer_call_edge(&report, "runambiguous").edge;
@@ -6144,9 +6137,7 @@ fn ws_overload_negatives_report() -> ProgramReport {
 /// stay honest `AmbiguousResolved` — two concrete `Source` routes, each
 /// carrying `Condition::AmbiguousDispatch`, never a guessed pick.
 fn assert_stays_ambiguous_resolved(report: &ProgramReport, caller_name_lc: &str) {
-    use al_call_hierarchy::program::resolve::edge::{
-        Condition, ObligationOutcome, classify_obligation,
-    };
+    use al_sem::program::resolve::edge::{Condition, ObligationOutcome, classify_obligation};
 
     let edge = &outer_call_edge(report, caller_name_lc).edge;
     assert_eq!(
@@ -6512,7 +6503,7 @@ fn ws_overload_with_scope_report() -> ProgramReport {
 /// binds `SomeField` to the WITH-receiver's Decimal field.
 #[test]
 fn ws_overload_with_scope_call_inside_with_stays_ambiguous_resolved() {
-    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
     let report = ws_overload_with_scope_report();
     let edges = edges_for_caller(&report, "callinsidewith");
@@ -6619,11 +6610,11 @@ fn ws_overload_with_scope_call_outside_with_control_picks_text_overload() {
 /// `Resolve(Value: Text)`. Only the workspace unit also carries the
 /// subscriber file, so the compound duplication is isolated to the
 /// `Compound Overload Target` object.
-fn compound_overload_dup_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
-    use al_call_hierarchy::snapshot::compilation::CompilationContext;
-    use al_call_hierarchy::snapshot::embedded::SourceFile;
-    use al_call_hierarchy::snapshot::provider::SourceRoot;
-    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+fn compound_overload_dup_snapshot() -> al_sem::snapshot::AppSetSnapshot {
+    use al_sem::snapshot::compilation::CompilationContext;
+    use al_sem::snapshot::embedded::SourceFile;
+    use al_sem::snapshot::provider::SourceRoot;
+    use al_sem::snapshot::{AppSetSnapshot, AppUnit, World};
 
     let target_src = r#"
 codeunit 50970 "Compound Overload Target"
@@ -6730,8 +6721,8 @@ codeunit 50971 "Compound Overload Subscriber"
 /// fix at the `build_program_graph` layer.
 #[test]
 fn compound_obj_dup_and_overload_dedups_to_canonical_count() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
 
     let snap = compound_overload_dup_snapshot();
     let cache = AbiCache::new();
@@ -6786,9 +6777,9 @@ fn compound_obj_dup_and_overload_dedups_to_canonical_count() {
 /// strict-arity match and dropped the subscription as ambiguous.
 #[test]
 fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::program::resolve::index::ResolveIndex;
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
+    use al_sem::program::resolve::index::ResolveIndex;
 
     let snap = compound_overload_dup_snapshot();
     let cache = AbiCache::new();
@@ -6857,11 +6848,11 @@ fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
 /// onto ONE `RoutineNodeId`: `Resolve(Value: Integer)` and `Resolve(Value:
 /// Text)`. Neither is a publisher — isolates the alias MARKER from the
 /// event-flow guard (Test 23f).
-fn two_overload_alias_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
-    use al_call_hierarchy::snapshot::compilation::CompilationContext;
-    use al_call_hierarchy::snapshot::embedded::SourceFile;
-    use al_call_hierarchy::snapshot::provider::SourceRoot;
-    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+fn two_overload_alias_snapshot() -> al_sem::snapshot::AppSetSnapshot {
+    use al_sem::snapshot::compilation::CompilationContext;
+    use al_sem::snapshot::embedded::SourceFile;
+    use al_sem::snapshot::provider::SourceRoot;
+    use al_sem::snapshot::{AppSetSnapshot, AppUnit, World};
 
     let src = r#"
 codeunit 50980 "Alias Target"
@@ -6922,8 +6913,8 @@ codeunit 50980 "Alias Target"
 /// run — both survive UNMARKED (`source_overload_aliased == false`).
 #[test]
 fn distinct_sig_fp_overloads_survive_unmarked() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
 
     let snap = two_overload_alias_snapshot();
     let cache = AbiCache::new();
@@ -6986,11 +6977,11 @@ fn distinct_sig_fp_overloads_survive_unmarked() {
 /// dep, identical content, mirroring `compound_overload_dup_snapshot`'s own
 /// obj_dup pattern) declaring ONE procedure — no overload pair, a TRUE
 /// re-parse duplicate (Test 23g, control).
-fn true_duplicate_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
-    use al_call_hierarchy::snapshot::compilation::CompilationContext;
-    use al_call_hierarchy::snapshot::embedded::SourceFile;
-    use al_call_hierarchy::snapshot::provider::SourceRoot;
-    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+fn true_duplicate_snapshot() -> al_sem::snapshot::AppSetSnapshot {
+    use al_sem::snapshot::compilation::CompilationContext;
+    use al_sem::snapshot::embedded::SourceFile;
+    use al_sem::snapshot::provider::SourceRoot;
+    use al_sem::snapshot::{AppSetSnapshot, AppUnit, World};
 
     let src = r#"
 codeunit 50981 "Dup Target"
@@ -7066,8 +7057,8 @@ codeunit 50981 "Dup Target"
 /// still collapses to ONE unmarked survivor.
 #[test]
 fn true_duplicate_collapses_unmarked() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
 
     let snap = true_duplicate_snapshot();
     let cache = AbiCache::new();
@@ -7093,11 +7084,11 @@ fn true_duplicate_collapses_unmarked() {
 
 /// A single workspace source object declaring two overloads that BOTH carry
 /// `[IntegrationEvent]` — a TRUE dual-publisher alias collision (Test 23h).
-fn dual_publisher_alias_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
-    use al_call_hierarchy::snapshot::compilation::CompilationContext;
-    use al_call_hierarchy::snapshot::embedded::SourceFile;
-    use al_call_hierarchy::snapshot::provider::SourceRoot;
-    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+fn dual_publisher_alias_snapshot() -> al_sem::snapshot::AppSetSnapshot {
+    use al_sem::snapshot::compilation::CompilationContext;
+    use al_sem::snapshot::embedded::SourceFile;
+    use al_sem::snapshot::provider::SourceRoot;
+    use al_sem::snapshot::{AppSetSnapshot, AppUnit, World};
 
     let src = r#"
 codeunit 50982 "Dual Publisher Target"
@@ -7164,14 +7155,14 @@ codeunit 50982 "Dual Publisher Target"
 /// paper over by skipping both).
 #[test]
 fn distinct_sig_fp_publishers_both_emit_correct_spans() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::program::resolve::decl_surface::DeclSurface;
-    use al_call_hierarchy::program::resolve::index::ResolveIndex;
-    use al_call_hierarchy::program::resolve::resolver::{
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
+    use al_sem::program::resolve::decl_surface::DeclSurface;
+    use al_sem::program::resolve::index::ResolveIndex;
+    use al_sem::program::resolve::resolver::{
         dual_publisher_alias_skip_count, emit_event_flow_edges,
     };
-    use al_call_hierarchy::snapshot::parse_snapshot;
+    use al_sem::snapshot::parse_snapshot;
 
     let snap = dual_publisher_alias_snapshot();
     let cache = AbiCache::new();
@@ -7280,11 +7271,11 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
 /// never its sibling's (per-overload caller attribution).
 #[test]
 fn sigfp_identity_agrees_across_all_four_live_sites() {
-    use al_call_hierarchy::program::abi_ingest::AbiCache;
-    use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::program::resolve::decl_surface::DeclSurface;
-    use al_call_hierarchy::program::resolve::stub;
-    use al_call_hierarchy::snapshot::{SnapshotBuilder, parse_snapshot};
+    use al_sem::program::abi_ingest::AbiCache;
+    use al_sem::program::build::build_program_graph;
+    use al_sem::program::resolve::decl_surface::DeclSurface;
+    use al_sem::program::resolve::stub;
+    use al_sem::snapshot::{SnapshotBuilder, parse_snapshot};
 
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/sigfp_overload_identity");
@@ -8040,7 +8031,7 @@ fn ws_compound_receiver_currpage_part_page_resolves_subpage_all_others_stay_unkn
 /// Task 3 (a `real_unknown_rate`/`unknown` count sanity check per fixture).
 #[test]
 fn unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons() {
-    use al_call_hierarchy::program::resolve::edge::{UnknownReason, unknown_reason_breakdown};
+    use al_sem::program::resolve::edge::{UnknownReason, unknown_reason_breakdown};
     use std::collections::BTreeMap;
 
     let fixtures = [
@@ -10156,9 +10147,7 @@ fn ws_cross_object_chain_abi_overload_collapsed_declines() {
 /// changed shape.
 #[test]
 fn ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_becomes_ambiguous_resolved() {
-    use al_call_hierarchy::program::resolve::edge::{
-        Condition, ObligationOutcome, classify_obligation,
-    };
+    use al_sem::program::resolve::edge::{Condition, ObligationOutcome, classify_obligation};
 
     let report = ws_cross_object_chain_report();
     let edges = edges_for_object_routine(&report, 51206, "testabioverloadcollapseddeclines");
@@ -10907,7 +10896,7 @@ fn ws_builtin_dispatch_audit_sites_produce_entry_trigger_run_edges() {
 
     // Dynamic-target site: honest dynamic dispatch, never Unknown.
     {
-        use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+        use al_sem::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
         let edges =
             edges_for_object_routine(&report, 50953, "indeterminatepagekeyworddynamictarget");

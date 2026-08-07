@@ -3,7 +3,7 @@
 
 #![cfg(feature = "telemetry")]
 
-use al_call_hierarchy::telemetry;
+use al_sem::telemetry;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 fn make_ctx() -> telemetry::CallContext<'static> {

@@ -88,14 +88,14 @@ const DEBUG_BUILD_SKIPS_REAL_PERF_BOUNDS: &str = "see module doc comment";
 #[cfg(not(debug_assertions))]
 mod release_checks {
     use super::perf_support;
-    use al_call_hierarchy::config::DiagnosticConfig;
-    use al_call_hierarchy::lsp::diagnostics::compute_all;
-    use al_call_hierarchy::lsp::encoding::PositionEncoding;
-    use al_call_hierarchy::lsp::handlers::{self, ItemData};
-    use al_call_hierarchy::lsp::snapshot::LspSnapshot;
-    use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Rung1Context, Updater};
-    use al_call_hierarchy::protocol::path_to_uri;
-    use al_call_hierarchy::snapshot::ParsedUnit;
+    use al_sem::config::DiagnosticConfig;
+    use al_sem::lsp::diagnostics::compute_all;
+    use al_sem::lsp::encoding::PositionEncoding;
+    use al_sem::lsp::handlers::{self, ItemData};
+    use al_sem::lsp::snapshot::LspSnapshot;
+    use al_sem::lsp::updater::{ChangeEvent, Rung, Rung1Context, Updater};
+    use al_sem::protocol::path_to_uri;
+    use al_sem::snapshot::ParsedUnit;
     use std::path::Path;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
@@ -485,22 +485,22 @@ mod release_checks {
     /// measure the same entry point over the same assembly, differing ONLY in
     /// the corpus they are pointed at.
     struct L4Substrate {
-        resolved: al_call_hierarchy::engine::l3::l3_workspace::L3Resolved,
-        calls: al_call_hierarchy::engine::l3::call_resolver::ResolvedCalls,
-        graph: al_call_hierarchy::engine::l4::combined_graph::CombinedGraph,
-        scc: al_call_hierarchy::engine::l4::scc::SccResult,
-        field_index: al_call_hierarchy::engine::l4::summary_runner::FieldIndex,
+        resolved: al_sem::engine::l3::l3_workspace::L3Resolved,
+        calls: al_sem::engine::l3::call_resolver::ResolvedCalls,
+        graph: al_sem::engine::l4::combined_graph::CombinedGraph,
+        scc: al_sem::engine::l4::scc::SccResult,
+        field_index: al_sem::engine::l4::summary_runner::FieldIndex,
     }
 
     impl L4Substrate {
         fn assemble(workspace: &Path) -> Self {
-            use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-            use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
-            use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-            use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
-            use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
-            use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
-            use al_call_hierarchy::engine::l4::summary_runner::FieldIndex;
+            use al_sem::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+            use al_sem::engine::l3::event_graph::build_event_graph;
+            use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+            use al_sem::engine::l3::symbol_table::SymbolTable;
+            use al_sem::engine::l4::combined_graph::build_combined_graph;
+            use al_sem::engine::l4::scc::{SccInputGraph, tarjan_scc};
+            use al_sem::engine::l4::summary_runner::FieldIndex;
             use std::collections::HashMap;
 
             let resolved = assemble_and_resolve_workspace_default(workspace).expect(
@@ -555,14 +555,11 @@ mod release_checks {
         fn solve(
             &self,
         ) -> (
-            al_call_hierarchy::engine::l4::effect_store::SummaryBundle,
-            std::collections::HashMap<
-                String,
-                al_call_hierarchy::engine::l4::summary::RoutineSummary,
-            >,
-            Vec<al_call_hierarchy::engine::l4::summary_runner::SummarizeDiagnostic>,
+            al_sem::engine::l4::effect_store::SummaryBundle,
+            std::collections::HashMap<String, al_sem::engine::l4::summary::RoutineSummary>,
+            Vec<al_sem::engine::l4::summary_runner::SummarizeDiagnostic>,
         ) {
-            al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle(
+            al_sem::engine::l4::summary_runner::compute_summaries_v2_bundle(
                 &self.resolved.workspace.routines,
                 &self.graph,
                 &self.scc,

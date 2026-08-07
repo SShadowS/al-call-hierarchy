@@ -22,10 +22,8 @@
 //! the same `assemble_and_resolve_workspace_default(...) -> project_r3a2(...)`
 //! entry the R3a-2 differential uses, run over an on-disk synthetic workspace.
 
-use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-use al_call_hierarchy::engine::l4::summary::{
-    PDbEffect, PDbEffectTempState, R3a2Projection, project_r3a2,
-};
+use al_sem::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+use al_sem::engine::l4::summary::{PDbEffect, PDbEffectTempState, R3a2Projection, project_r3a2};
 use tempfile::TempDir;
 
 const APP_JSON: &str = r#"{

@@ -1,6 +1,6 @@
 # Telemetry Schema Reference
 
-This document describes the telemetry events that `al-call-hierarchy` may emit. It is intended for users who want to audit exactly what is sent, and for maintainers who query the resulting data in Azure Application Insights.
+This document describes the telemetry events that `al-sem` may emit (from the `al-call-hierarchy` LSP server binary). It is intended for users who want to audit exactly what is sent, and for maintainers who query the resulting data in Azure Application Insights.
 
 The implementation lives entirely under [`src/telemetry/`](../src/telemetry/) — the canonical event definitions are in [`src/telemetry/events.rs`](../src/telemetry/events.rs) (line numbers cited throughout). The serialization rules live in [`src/telemetry/events_attrs.rs`](../src/telemetry/events_attrs.rs) and [`src/telemetry/exporter.rs`](../src/telemetry/exporter.rs).
 
@@ -9,6 +9,8 @@ If anything in this document disagrees with the source, the source wins — plea
 ## 1. Where events arrive
 
 Events are sent over OTLP-compatible spans through the [`opentelemetry-application-insights`](https://crates.io/crates/opentelemetry-application-insights) exporter. They land in the **`dependencies`** table of the configured Azure Application Insights resource (not `customEvents` — this is a side effect of how `tracing-opentelemetry` translates `tracing::span!` into Azure's data model).
+
+The service name (Application Insights `cloud_RoleName`) is **`al-call-hierarchy`**, and stays that way after the 2026-08-07 crate rename to `al-sem`. It is the join key for existing dashboards and saved queries, so renaming it would split every one of them at the rename point for no user-visible gain. See the `SERVICE_NAME` constant in [`src/telemetry/exporter.rs`](../src/telemetry/exporter.rs).
 
 A typical KQL query to inspect them looks like:
 
@@ -31,7 +33,7 @@ Every event carries an envelope with the following dimensions, regardless of the
 | `telemetry.alch.install_id` | 16-char hex | Stable per-installation pseudonym derived from the local 32-byte salt (`blake3(salt)[..8]`). Lets the maintainer count distinct installations without learning who you are. |
 | `telemetry.alch.workspace_id` | 16-char hex | Salted, domain-separated hash of the absolute workspace path. Lets misses from the same project cluster together without revealing the path. |
 | `telemetry.alch.session_id` | u64 | Random 64-bit session identifier, regenerated on every process start. Lets one session's events be grouped without tying them to prior sessions. |
-| `telemetry.alch.al_version` | string | The `al-call-hierarchy` crate version (e.g. `0.7.0`). |
+| `telemetry.alch.al_version` | string | The `al-sem` crate version (e.g. `0.7.0`). The `alch` field prefix is a frozen wire name, unchanged by the 2026-08-07 rename. |
 | `telemetry.alch.grammar_version` | string | The bundled `tree-sitter-al` grammar revision. |
 | `telemetry.alch.os` | string | One of `windows`, `macos`, `linux`, or the raw `std::env::consts::OS` value if unrecognised. |
 
@@ -211,7 +213,7 @@ Dedup runs in-process before sampling, in a fixed-size LRU keyed by the event's 
 ```
 process start
   └─ load consent (env, CLI, config) ─→ if disabled, no telemetry runtime starts
-       └─ load/create install salt at ~/.al-call-hierarchy/install-id
+       └─ load/create install salt at ~/.al-sem/installation-id
             └─ initialise OTLP exporter with baked connection string
                  └─ session.start emitted
                       └─ recorders fire as resolutions/parses/handlers run
@@ -248,7 +250,7 @@ If the process exits without flushing (panic, SIGKILL, segfault), the next sessi
 
 All identifier-derived attributes pass through [`src/telemetry/hash.rs`](../src/telemetry/hash.rs):
 
-- **Salt**: a 32-byte cryptographically random value generated once per installation and stored at `~/.al-call-hierarchy/install-id`. Never transmitted.
+- **Salt**: a 32-byte cryptographically random value generated once per installation and stored at `~/.al-sem/installation-id` (migrated automatically from the pre-rename `~/.al-call-hierarchy/installation-id`). Never transmitted.
 - **Algorithm**: `blake3::Hasher::new_keyed(salt)` with the salt as the keying material — equivalent to a salted MAC, not a plain hash. An attacker who intercepts hashes cannot brute-force them without the salt.
 - **Domain separation**: each kind of input is prefixed with a fixed tag (`object:`, `procedure:`, `app_id:`, `file:`, `workspace:`, `node_kind:`) before hashing, so the same string in two contexts produces two unrelated hashes.
 - **Truncation**: 128 bits (32-char hex) for queryable AL-identifier hashes; 64 bits (16-char hex) for `install_id` and `workspace_id` where collision risk between installations is the concern, not preimage resistance.
@@ -266,12 +268,12 @@ It does *not* defend against an attacker with both the data **and** access to yo
 Three independent off-switches; **any one of them disables the runtime entirely** — no salt is read, no exporter starts, no events are buffered.
 
 1. **Environment variable** (precedence: highest):
-   - `AL_CH_TELEMETRY=0` (project-specific)
+   - `AL_SEM_TELEMETRY=0` (project-specific; the pre-rename `AL_CH_TELEMETRY=0` is still honoured)
    - `DO_NOT_TRACK=1` (cross-tool community standard)
 
 2. **CLI flag**: launch with `--no-telemetry`.
 
-3. **Config file** at `~/.al-call-hierarchy/config.json`:
+3. **Config file** at `~/.al-sem/config.json`:
 
    ```json
    { "telemetry": { "enabled": false } }
@@ -337,4 +339,4 @@ dependencies
 
 ---
 
-If you spot a discrepancy between this document and the source, the source is canonical. Open an issue at <https://github.com/SShadowS/al-call-hierarchy/issues> and the doc will be corrected.
+If you spot a discrepancy between this document and the source, the source is canonical. Open an issue at <https://github.com/SShadowS/al-sem/issues> and the doc will be corrected.

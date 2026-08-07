@@ -26,13 +26,13 @@
 #[allow(dead_code)]
 mod perf_support;
 
-use al_call_hierarchy::config::DiagnosticConfig;
-use al_call_hierarchy::lsp::diagnostics::compute_all;
-use al_call_hierarchy::lsp::encoding::PositionEncoding;
-use al_call_hierarchy::lsp::handlers::{self, ItemData};
-use al_call_hierarchy::lsp::snapshot::LspSnapshot;
-use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Rung1Context, Updater};
-use al_call_hierarchy::protocol::path_to_uri;
+use al_sem::config::DiagnosticConfig;
+use al_sem::lsp::diagnostics::compute_all;
+use al_sem::lsp::encoding::PositionEncoding;
+use al_sem::lsp::handlers::{self, ItemData};
+use al_sem::lsp::snapshot::LspSnapshot;
+use al_sem::lsp::updater::{ChangeEvent, Rung, Rung1Context, Updater};
+use al_sem::protocol::path_to_uri;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
 use tempfile::TempDir;

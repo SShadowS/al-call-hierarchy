@@ -26,9 +26,7 @@
 
 use std::path::PathBuf;
 
-use al_call_hierarchy::engine::deps::r3a4_projection::{
-    R3a4Projection, project_r3a4_from_workspace,
-};
+use al_sem::engine::deps::r3a4_projection::{R3a4Projection, project_r3a4_from_workspace};
 use serde_json::Value;
 
 use crate::regen;

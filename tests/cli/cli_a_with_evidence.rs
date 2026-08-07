@@ -26,8 +26,8 @@
 
 use std::path::{Path, PathBuf};
 
-use al_call_hierarchy::engine::gate::filter::Scope;
-use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
+use al_sem::engine::gate::filter::Scope;
+use al_sem::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
 const APP_JSON: &str = r#"{
     "id": "11111111-0000-0000-0000-0000000000e3",
