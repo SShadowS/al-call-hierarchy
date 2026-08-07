@@ -179,15 +179,31 @@ The next `use` added silently exits any such list.
 - `src/program/`
 - `src/snapshot/` (covers `embedded.rs` / `cache.rs`, which determine which entries a `.app`
   yields and how virtual paths are named — the `.app` blake3 alone does not fix that)
-- `src/engine/deps/` — **an exception to the `src/engine/` exclusion below, and a
-  mandatory one.** `symbol_reference.rs` defines two types that are serialized INTO packs
-  (`SubtypeTag`, `AbiEventKind`) and contains `reconstruct_param_field_type`, which decides
-  which `SubtypeTag` a parameter receives. That is extraction behaviour, and a change to it
-  must invalidate packs. Found while reviewing Task 4 of the format-gate plan: the original
-  closure below excluded all of `src/engine/`, which would have let tag-assignment logic
-  change without invalidating a single pack — the exact stale-pack hole this section exists
-  to close. The error came from reasoning about DIRECTORIES rather than about the set of
-  types actually reachable from a serialized `ObjectNode`/`RoutineNode`.
+- `src/engine/deps/` — **an exception to the `src/engine/` exclusion below. Conservative,
+  not currently load-bearing — and the original justification for it was wrong.**
+
+  **Corrected.** The amendment that added this directory claimed `symbol_reference.rs`
+  defines two types "serialized INTO packs (`SubtypeTag`, `AbiEventKind`)". Both halves are
+  false against the merged code, and the falsification was found by an independent review:
+  - `symbol_reference::AbiEventKind` has no `Serialize` (`symbol_reference.rs:24`). The one
+    packed is `resolve::edge::AbiEventKind` (`node_extract.rs:9`), already inside
+    `src/program/`.
+  - No `EmbeddedSource` pack can carry a `SubtypeTag` at all. It reaches a node only via
+    `AbiParams::Complete`, whose sole production construction is `abi_ingest.rs:102`;
+    `extract_nodes` always writes `AbiParams::Missing` (`node_extract.rs:681`). ABI ingestion
+    is `SymbolOnly` tier, and §7 restricts packs to `EmbeddedSource`.
+
+  So the stale-pack hole the amendment claimed to close **does not exist today**. Keep the
+  directory anyway: inclusion costs over-invalidation only (one reparse per base version),
+  and the invariant protecting it — "packs are `EmbeddedSource`-only, therefore `AbiParams`
+  is always `Missing`" — is implicit and thin. `build.rs:1182` already notes an
+  `AbiParams::Complete`-only guard "is only as sound as this invariant". If packs are ever
+  extended to symbol-only apps, `SubtypeTag` becomes live payload and this directory becomes
+  mandatory rather than merely prudent.
+
+  **The lesson stands even though the example was wrong:** derive this closure from the
+  reachable type set, not from directory names. The original error was reasoning about
+  DIRECTORIES; the correction's error was asserting reachability without tracing it.
 - the tree-sitter-al grammar's **source files** (`grammar.js`, generated `parser.c`), never a
   version string
 - the tree-sitter **runtime** crate's lockfile entry — error recovery lives in the core
@@ -212,7 +228,13 @@ loudly and forces a fingerprint review. Both mechanisms ship; neither alone is s
 
 ## §9 — Storage discipline
 
-One file per key under `<os-cache>/alsem/dep-pack-v1/`, mirroring `preflight_cache.rs`
+One file per key under `<os-cache>/alsem/dep-pack-v1/` — **a default, not a law.** §13's
+falsified-parallelism note explains why: with one app holding 84 % of the population, the
+per-app granularity this line fixes IS the critical path, and sharding that app across several
+independently-hashed files is the highest-leverage change available. Treat "one file per key"
+as the shape to start from and to depart from deliberately, not as a constraint.
+
+Mirroring `preflight_cache.rs`
 throughout: atomic tmp+rename, every abnormal state (missing, unreadable, schema mismatch,
 key mismatch, fingerprint mismatch, self-hash mismatch) is a silent miss logged at debug, a
 write failure never breaks a run, environment variables override the directory and disable
@@ -270,6 +292,37 @@ breaks.
 
 Every other consumer of `parsed` for dependency units must be audited the same way.
 
+### §11.3 — THE SENTINEL. Audit `unit.source`, not just `parsed` — this clause was scoped wrong
+
+**The audit instruction above is scoped to miss the thing most likely to break.** Repo-wide,
+"this dependency is symbol-only" is detected as `AppUnit.source.is_none()`
+(`src/snapshot/snapshot.rs:37`). Under §10's light snapshot a pack-hit `EmbeddedSource` app
+ALSO has `source: None`, so that equation silently stops holding at three dispatch sites —
+none of which consume `parsed`, so none of which the clause above would have caught:
+
+- **`src/program/build.rs:103-105`** — Step 2b skips units with `source.is_some()`, so every
+  source-less unit is ABI-ingested. A pack-hit app would be fed to `ingest_abi`, producing
+  SymbolOnly-tier nodes (no `RoutineMeta`, `AbiParams` from `SymbolReference.json`) alongside
+  or instead of the pack's `EmbeddedSource` nodes. **Wrong tier, silently.**
+- **`src/program/resolve/full.rs:1253`** — `u.source.is_none() && has_abi_objects` marks an
+  opaque dependency boundary. A source-backed dep with a pack hit would be reported opaque.
+- **`src/program/resolve/abi_check.rs:312-313`** — treats every source-less unit as a dep
+  boundary and ingests its `SymbolReference.json` into `RawAbiIndex`.
+
+**Fix: give `AppUnit` a tri-state** — source-bearing / symbol-only / embedded-source-not-
+materialized — rather than overloading `Option`. Cheap now; otherwise it surfaces as a
+mystery differential on the first light-snapshot run.
+
+**The miss path compounds it.** Under a light snapshot even a pack MISS begins with
+`source: None` and must materialize that one app's source LATE. `parse_snapshot` has no such
+API — it drops `None` units outright (`src/snapshot/parse.rs:90-91`).
+
+**Not the risk, for the record:** the two rewires §11.1/§11.2 name are both straightforward.
+`PackedFile::routine_meta` is exactly the `(RoutineNodeId, RoutineMeta)` pairs
+`DeclSurface::with_frozen` absorbs (`decl_surface.rs:179-182`), with last-write-wins order
+reproducible from pack order per §12; and `recovered_file_paths` is a signature change on a
+15-line function (`parse.rs:61-74`).
+
 ## §12 — Ordering and the equivalence gate
 
 `dedup_routines_preserving_genuine_overloads` keeps the first occurrence per key — arbitrary
@@ -298,10 +351,36 @@ analogy still does not hold: a decode additionally does file I/O, varint parsing
 validation on every string, enum discriminant decoding and the guid→`AppRef` re-intern, none
 of which a clone pays. A serial decode plausibly lands at 100–250 ms — straddling the gate.
 
-What actually carries the recommendation is **parallelism**: packs are per-app files decoded
-inside `build_dep_layer`'s per-app loop, on the same rayon pool `parse_snapshot` already uses
-(`src/snapshot/parse.rs:86-95`). So postcard is a hypothesis with a favourable prior, not a
-bounded quantity.
+What was expected to carry the recommendation is **parallelism**: packs are per-app files
+decoded inside `build_dep_layer`'s per-app loop, on the same rayon pool `parse_snapshot`
+already uses (`src/snapshot/parse.rs:86-95`).
+
+> **FALSIFIED BY THE MEASUREMENT — do not build on this paragraph.** The gate showed
+> parallelism buys almost nothing here. Base Application is 100,944 of 119,773 routines in ONE
+> serial decode unit and accounted for 89–99 % of every logged round's wall time; the ledger
+> concludes outright that "more cores will not help … the critical path is effectively serial"
+> (`docs/2026-08-07-dep-pack-gate-measurement.md:239-250`). The serial-decode ESTIMATE above
+> was right; the MECHANISM this spec leaned on was not. The verdict survives on margin —
+> ~12× against the same-corpus saving — not on the stated mechanism.
+>
+> **The real lever is intra-app SHARDING, and this spec structurally excluded it** by fixing
+> "one file per key" (§9) with key = app (§7), so the choice was framed as
+> postcard-versus-string-table when the load-bearing variable was artifact granularity. Split
+> the Base Application pack into N independently-hashed shards and the 68–111 ms critical path
+> falls toward the ~7–11 ms the other eight packs already demonstrate. Three measured facts say
+> this is cheap: a pack is already a `Vec<PackedFile>` (`src/program/pack/mod.rs:113`), so a
+> shard boundary is a file-subset boundary needing NO schema change; shape A's 7,416 per-file
+> frames cost 0.42 MB and decoded FASTER than shape B in all six logged runs, so finer framing
+> is free or better; and integrity is ~3 ms per round, so per-shard hashing is noise.
+>
+> **This changes what belongs in reserve.** The string table attacks the parse, not the shape
+> of the serial unit — so it does not address the one risk the ledger names, that the number
+> scales one-for-one with Base Application growth. Sharding retires that risk; re-measuring
+> against a switch line does not. Hold sharding as the intended response, and record an
+> archived/zero-copy format (rkyv-shaped, load ≈ read + verify ≈ 10–16 ms) as the other
+> reserve: the string table attacks ~3 ms and the allocation count, an archived format attacks
+> the whole ~85 ms. It was a defensible economy not to ask that at 12× margin — the owned node
+> types would need borrowing twins — but it should be on the table by name, not absent.
 
 **The gate therefore measures the hit-path shape, not a micro-benchmark:** per-app packs,
 parallel decode, guid re-intern included, from a cold OS file cache at least once. Under
