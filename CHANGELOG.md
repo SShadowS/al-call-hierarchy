@@ -94,18 +94,27 @@ still tested.
 
 The measurement that decides the pack cache's artifact format, per
 `docs/superpowers/specs/2026-08-07-dependency-pack-cache-design.md` §13. **Verdict:
-PROCEED with postcard** — worst round **113.1 ms** across 9 runs / 54 rounds on DO
+PROCEED with postcard** — worst round **110.2 ms** in a logged 36-round sample on DO
 (10,662 dependency objects / 119,773 routines / 119,773 `RoutineMeta`, a 33.25 MB
-artifact; full observed range 66.8–113.1 ms, typical ~92 ms) against a ~200 ms proceed
-line and ~600 ms switch line, to save ~1,280 ms per hit. The shared string-table
-alternative stays in reserve. Ledger, every round of every run, and caveats:
-`docs/2026-08-07-dep-pack-gate-measurement.md`.
+artifact; range 66.2–110.2 ms, median 85.0, mean 83.8) against a ~200 ms proceed line and
+~600 ms switch line, to save a **measured 1,204–1,336 ms on the same corpus**. The shared
+string-table alternative stays in reserve. Ledger:
+`docs/2026-08-07-dep-pack-gate-measurement.md`; raw stdout of all six runs:
+`docs/measurements/2026-08-07-dep-pack-gate-runs.log`, from which every timing in the
+ledger is transcribed.
 
-The verdict is taken from the worst round observed, not a median: the runs shared the
-machine with sibling agent processes at ~26 % baseline CPU load, and the first four runs
-(66.8–84.0 ms) and last five (80.9–113.1 ms) differ by contention alone, with no change
-to the decode path between them. No figure is rounded in the favourable direction and no
-run is dropped.
+**110.2 ms is a sample maximum on a shared machine, not a bound — treat it as ±20 %.** An
+independent reviewer re-running the prior commit's binary on the same workspace got a
+worse worst round, **121.1 ms**, which is recorded in the ledger rather than discarded:
+an external reproduction that came in worse and still cleared by 1.65× is stronger
+evidence for PROCEED than our own numbers. The spread is most likely concurrent load on a
+shared machine, but no isolating probe was run and that attribution is not established.
+
+The saving is measured on the SAME corpus rather than quoted across corpora: the bench
+now times `parse_snapshot` + `build_dep_layer` (what a hit replaces) in every run. Spec
+§13's ~1,280 ms comes from `docs/2026-08-02-dep-parse-sizing.md`, whose workspace root is
+unrecorded and which no root in this checkout reproduces, so a ratio against it would mix
+populations.
 
 It measures the HIT-PATH SHAPE, not a micro-benchmark — per-app pack files, parallel
 decode on `big_stack_pool()` (the same local pool `parse_snapshot` installs into, not
@@ -120,32 +129,38 @@ run would be a floor, not a decision.
 Both artifact shapes are built and timed and the verdict takes the worst round of either:
 one `PackedFile` per source file (spec §6's shape, 7,416 frames, 33.25 MB) and one
 synthetic frame per app (32.83 MB). Per-file framing measured at 59 bytes per frame and
-cost no time — the per-file shape decoded faster in 8 of 9 runs — so nothing here is
-adjusted by an estimate of what framing would have cost.
+cost no time — the per-file shape decoded faster in all six logged runs — so nothing here
+is adjusted by an estimate of what framing would have cost.
 
 Three findings worth carrying into spec step 5:
 
 - **The wall time is one pack.** Base Application is 100,944 of the 119,773 routines and
-  accounts for 90–99 % of each round. The parallelism the spec leaned on to carry
-  postcard is nearly exhausted at nine packs of very unequal size, so more cores will not
-  help and the figure scales with Base Application rather than with workspace size.
-  Re-run this gate on a major BC version bump.
-- **Integrity is ~3 ms of a ~90 ms load**, which also bounds what a format switch could
+  accounted for 89–99 % of each round across the logged sample (the reviewer's re-run saw
+  one shape at 75 %, so it is high but variable). The parallelism the spec leaned on to
+  carry postcard is nearly exhausted at nine packs of very unequal size, so more cores
+  will not help and the figure scales with Base Application rather than with workspace
+  size. Re-run this gate on a major BC version bump.
+- **Integrity is ~3 ms of an ~85 ms round**, which also bounds what a format switch could
   win: a string table changes the parse, not the blake3 pass and not the read.
-- **Rebuilding `Arc<DepMetaMap>` from the packed tier costs a further 58.0–86.8 ms** and
-  is deliberately NOT in the gate number — a pack stores that tier as a `Vec` and
-  `DeclSurface` needs a `HashMap`. Excluded because the format choice does not turn on it
-  (a string table would not make a `HashMap` build faster), but step 5 must budget it:
-  ~200 ms all-in on the worst observed pairing, against ~1,280 ms saved.
+- **Rebuilding `Arc<DepMetaMap>` from the packed tier costs a further 67.9–74.0 ms** (86.0
+  in the reviewer's re-run) and is deliberately NOT in the gate number — a pack stores
+  that tier as a `Vec` and `DeclSurface` needs a `HashMap`. Excluded because the format
+  choice does not turn on it (a string table would not make a `HashMap` build faster), but
+  step 5 must budget it: the worst genuinely observed single run pairs 121.1 ms of load
+  with 86.0 ms of map build for 207.1 ms all-in, against ~1,262 ms saved.
 
-Two honest limits are recorded in the ledger rather than smoothed over. All rounds read
-from a WARM page cache (the bench writes the packs moments before, and Windows offers no
-user-mode eviction); the cold penalty was measured directly on the artifact volume
-instead — 2,956 MB/s cold against 4,800 MB/s warm, so a cold first round adds ~4 ms. And
-the DO population came in 5–9 % below the figures `docs/2026-08-02-dep-parse-sizing.md`
-quoted; unzipping `.alpackages` directly confirms the snapshot ingests **all 10,800**
-embedded `.al` files, app for app, so the difference is in the workspace's contents, not
-in what the engine sees.
+Two limits are recorded in the ledger rather than smoothed over. **Spec §13's "cold OS
+file cache at least once" is NOT met** — the bench writes the packs moments before the
+rounds, so their pages are resident and no ordering change can make round 0 cold; a
+`FILE_FLAG_NO_BUFFERING` read is the route if the sub-13 ms read share is ever worth
+unsafe FFI in a bench. No substitute figure is offered, and an earlier revision's derived
+"~4 ms cold penalty" is withdrawn as unsupported. Second, the DO population came in 5–9 %
+below the figures `docs/2026-08-02-dep-parse-sizing.md` quoted; unzipping `.alpackages`
+directly confirms the snapshot ingests **all 10,800** embedded `.al` files, app for app,
+so nothing is dropped — but the CAUSE is not established. An earlier claim that the
+`.alpackages` contents had changed is withdrawn (every `.app` there predates the sizing
+run), and neither of this checkout's two dependency-bearing DO roots reproduces the
+sizing doc's triple.
 
 ### Added - `RawKind::try_from_raw` and `RawKind::ALL` (generated)
 

@@ -74,9 +74,19 @@ fn main() {
     .build()
     .expect("build snapshot");
 
+    // `parse_snapshot` + `build_dep_layer` timed separately: together they are
+    // exactly what a pack HIT replaces, so this is the saving the load cost has
+    // to be weighed against — measured on THIS corpus. Spec §13 quotes ~1,280 ms
+    // from `docs/2026-08-02-dep-parse-sizing.md`, but that figure was taken on a
+    // corpus whose workspace root was never recorded and which no root in this
+    // checkout reproduces, so a ratio against it would cross populations.
+    let t_parse = Instant::now();
     let parsed = parse_snapshot(&snap);
+    let parse_ms = ms(t_parse.elapsed());
     let abi_cache = AbiCache::new();
+    let t_dep = Instant::now();
     let dep_layer = build_dep_layer(&snap, &abi_cache, &parsed);
+    let dep_layer_ms = ms(t_dep.elapsed());
 
     let dep_files: usize = parsed
         .iter()
@@ -90,6 +100,11 @@ fn main() {
         "population: {dep_files} dep source files, {} dep objects, {} dep routines",
         dep_layer.dep_objects.len(),
         dep_layer.dep_routines.len()
+    );
+    println!(
+        "WHAT A HIT REPLACES (same corpus): parse_snapshot {parse_ms:.1} ms + build_dep_layer \
+         {dep_layer_ms:.1} ms = {:.1} ms",
+        parse_ms + dep_layer_ms
     );
     println!(
         "  (whole snapshot, deps + primary: {all_files} source files across {} apps)",
@@ -389,24 +404,13 @@ fn measure(paths: &[PathBuf], packs: &[Vec<u8>], apps: &AppRegistry) -> Vec<f64>
     // (`snapshot::parse::parse_snapshot`), not rayon's global pool.
     let pool = al_call_hierarchy::big_stack::big_stack_pool();
 
-    // The I/O share on its own, so a reader can reason about a cold cache
-    // without the decode number hiding it.
-    let io = pool.install(|| {
-        let start = Instant::now();
-        let bytes: usize = paths
-            .par_iter()
-            .map(|p| std::fs::read(p).expect("read").len())
-            .sum();
-        let e = start.elapsed();
-        assert_eq!(bytes, packs.iter().map(Vec::len).sum::<usize>());
-        e
-    });
-    println!("  read only (warm page cache): {:.1} ms", ms(io));
-
     // The integrity pass on its own. `decode` blake3s the whole body before it
     // parses a field, and at 33 MB that is no longer the free check Task 5
     // measured on a 296 KB pack. Printed because it bounds what a format
     // switch could win: the string table changes the PARSE, not the hash.
+    //
+    // Runs on the in-memory `packs`, so unlike the read probe below it cannot
+    // touch the page cache and cannot affect round 0.
     let hash_only = pool.install(|| {
         let start = Instant::now();
         let n: usize = packs
@@ -507,6 +511,37 @@ fn measure(paths: &[PathBuf], packs: &[Vec<u8>], apps: &AppRegistry) -> Vec<f64>
             slowest / worst_round * 100.0
         );
     }
+
+    // The I/O share on its own, so a reader can see how much of a round is the
+    // read. Deliberately runs AFTER the rounds: an earlier revision ran it
+    // FIRST, which read every pack file into the page cache immediately before
+    // round 0 and guaranteed round 0 was warm on any OS, quite apart from
+    // eviction behaviour. Moving it here removes the bench's own contribution
+    // to that.
+    //
+    // It does NOT make round 0 cold, and nothing in this bench does: `encode`
+    // wrote these files moments earlier, so their pages are resident before
+    // any round runs. Spec §13's "cold OS file cache at least once" is
+    // therefore NOT met by this bench, and the ledger says so rather than
+    // substituting an estimate. Getting a genuinely cold round needs a read
+    // that bypasses the cache manager — on Windows a `FILE_FLAG_NO_BUFFERING`
+    // handle with sector-aligned buffers — which is the route if a future
+    // revision decides the sub-10 ms read share is worth unsafe FFI in a bench.
+    let io = pool.install(|| {
+        let start = Instant::now();
+        let bytes: usize = paths
+            .par_iter()
+            .map(|p| std::fs::read(p).expect("read").len())
+            .sum();
+        let e = start.elapsed();
+        assert_eq!(bytes, packs.iter().map(Vec::len).sum::<usize>());
+        e
+    });
+    println!(
+        "  read only, WARM (not a cold-cache measurement — see the fn comment): {:.1} ms",
+        ms(io)
+    );
+
     rounds
 }
 
