@@ -341,6 +341,25 @@ Note that `preflight_cache`'s unpruned state is currently *mis-documented* as av
 §17.1 corrects that claim as part of step 0, so this section's "third" is honest rather than
 contradicted by the module it cites.
 
+## §15a — Carried into step 5's brief (from the format-gate plan's reviews)
+
+Raised and deliberately parked during `2026-08-07-dependency-pack-format-gate`, because
+each is a CODE change outside that plan's scope. They must not be lost between plans.
+
+- **`encode` trusts its caller to have called `compute_self_hash` first.** Nothing
+  type-level enforces it. Every caller is correct today (three tests plus the bench), so
+  this is not a live defect — but the durable fix is to make `self_hash` unconstructible
+  by hand, or have `encode` compute it itself, so a future caller cannot write a pack
+  whose hash does not cover its body. Do this when the seam lands, before any pack
+  reaches a real cache directory.
+- **The gate bench leaves pack artifacts in a temp directory.** Arguably a feature while
+  the bench is run by hand — the artifacts are inspectable — but `U:` is documented as
+  disk-constrained, so revisit if it bites.
+- **The bench hardcodes `parse_status_recovered = false` for every file** in both pack
+  shapes. Immaterial to the gate (it is a bool), but the real seam must carry the true
+  per-file value, since `snapshot::parse::recovered_file_paths` is the load-bearing
+  absence-proof diagnostic (§11.2).
+
 ## §16 — Live risks
 
 - **§2's hit-rate premise is domain knowledge, not a measurement.** Low observed hit rate
