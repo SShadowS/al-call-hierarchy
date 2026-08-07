@@ -66,8 +66,16 @@ const PREFLIGHT_CACHE_SCHEMA: u32 = 1;
 
 /// Env var pointing the cache at a specific directory. **Required for tests** —
 /// without it every test would share one global mutable directory, which is
-/// exactly the pre-existing defect in `snapshot::cache` (no override, no
-/// pruning) that this module deliberately does not copy.
+/// half of the pre-existing defect in `snapshot::cache` (no override, no
+/// pruning).
+///
+/// This module fixes the OVERRIDE half and, as of today, does NOT fix the
+/// pruning half: there is no size or age bound and the directory grows without
+/// limit. `docs/superpowers/specs/2026-08-01-preflight-verdict-cache.md` §4
+/// asked for size/age-bounded pruning and it was never implemented. Known debt,
+/// stated here rather than implied away — an earlier revision of this doc
+/// claimed the whole defect was "deliberately not copied", which was false for
+/// the pruning half.
 pub const ENV_CACHE_DIR: &str = "ALSEM_PREFLIGHT_CACHE_DIR";
 
 /// Env var disabling the cache entirely (any non-empty value). `scripts/cdo-gate`

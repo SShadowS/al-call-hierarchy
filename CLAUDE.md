@@ -152,7 +152,7 @@ or consumed programmatically by `src/engine/l4`/`l5` (effect summaries, detector
 - `language.rs` - Re-exports `al_syntax::language::language()`; also holds the legacy
   tree-sitter S-expression queries (`DEFINITIONS`/`CALLS`/`EVENT_SUBSCRIBERS`/`VARIABLES`),
   which are dead code — retired by the owned-IR migration, zero call sites repo-wide.
-  Kept only because `queries/highlights.scm`/`queries/tags.scm` (editor syntax
+  Kept only because `tree-sitter-al/queries/highlights.scm`/`tree-sitter-al/queries/tags.scm` (editor syntax
   highlighting, a separate consumer) still reference the same grammar node names.
 
 **Key Modules — program engine (`src/engine/`, `src/program/`, `src/snapshot/`):**
@@ -207,7 +207,13 @@ Testing Philosophy & Goldens below).
 
 **Core Patterns:**
 - **String interning** (`string-interner`): All symbol names deduplicated for memory efficiency
-- **Parallel parsing** (`rayon`): Thread-local parsers process files concurrently
+- **Parallel parsing** (`rayon`): files are parsed concurrently via `par_iter` on a
+  dedicated pool (`crate::big_stack::big_stack_pool`, sized for the `al-syntax`
+  lowerer's recursion — see `src/snapshot/parse.rs:84-95`). There are **no**
+  thread-local parsers: `al_syntax::parse` constructs a fresh
+  `tree_sitter::Parser` and calls `set_language` per file
+  (`crates/al-syntax/src/parse.rs:11-14`). Reusing a parser per worker thread is
+  an open, unmeasured optimisation — see the pack-cache spec §17.5.
 - **Incremental updates** (`notify`): Only re-parse changed files
 
 ## Performance Targets
@@ -289,7 +295,7 @@ the one place that still reads raw grammar shapes):
   `member_trigger_name` CST node (`object`/`member` fields, no literal `::` token in its
   field set) rather than a plain `(identifier)`/`(quoted_identifier)` — `routine_name_text`
   joins the two fields back into `Object::Member` text. Editor consumers
-  (`queries/highlights.scm` + `queries/tags.scm`) capture `member_trigger_name` directly;
+  (`tree-sitter-al/queries/highlights.scm` + `tree-sitter-al/queries/tags.scm`) capture `member_trigger_name` directly;
   the engine does not use `.scm` queries at all (IR-only).
 - A `case` branch's `pattern` field binds one `_single_pattern` value per branch value —
   the `,` separators are never tagged `pattern` — and an `in`-as-case-pattern lowers to
