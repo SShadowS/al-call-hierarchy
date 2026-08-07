@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - README rewritten for the audience that actually installs this (BC developers), and two false claims in it fixed
+
+The old README opened with a metrics table written in resolver vocabulary — "0.0000%
+unresolved call edges", "honest taxonomy", µs latencies — followed by a features table,
+an architecture diagram and a bucket taxonomy. All of it is true and none of it helps a
+Business Central developer decide in thirty seconds whether to install the thing. It also
+documented **one of the nine `alsem` subcommands** (`analyze`) and none of the main
+binary's CLI mode, while giving `aldump --program-call-graph-stats` — an internal
+metrics dump — a slot in the Quick Start.
+
+Two claims in it were false, and both were checked against the source rather than
+rewritten around:
+
+- **"Rust 1.75+"**, in the badge and the overview table. Both `Cargo.toml` and
+  `crates/al-syntax/Cargo.toml` set `edition = "2024"`, which needs **1.85+**. The stated
+  minimum could not build the repository.
+- **"incoming ~4ms warm measured"**, stated twice. `tests/perf_bounds.rs:120` records
+  "Measured median 20.3ms on this machine" and CLAUDE.md's own table says ~16.34ms.
+  Nothing in the tree supports 4ms. The README now says ~16 ms and explains why that
+  operation is structurally slower than its siblings (every caller's position is
+  re-derived live so it can never be stale). For a tool whose entire pitch is that it
+  does not guess, an unsupported latency claim was the worst kind of error to ship.
+
+What the README is now: a per-tool "what and why" block for the four things a user can
+actually run, a section naming ten real checks in plain English with **verbatim engine
+output** from `tests/cli-a-goldens/terminal/ws-d1-multi-caller.plain.txt` (a committed
+golden, so the sample cannot drift from what the tool prints), the other eight `alsem`
+subcommands grouped by the question they answer rather than by name, and the resolution
+story reframed as why the answers are trustworthy instead of as a bucket table.
+
+Every command and flag in it was read out of `src/bin/alsem.rs` and `src/main.rs` before
+being written down, which caught three examples that would have failed for a reader:
+`alsem digest --changed changed-files.txt` (`--changed` auto-detects, and an existing file
+path resolves as a **diff**, so the documented invocation meant something else), `alsem
+policy explain d8-commit-in-transaction` (policy rule ids are policy ids like
+`no-commit-in-event-subscribers`, not detector ids), and the claim that `--preset` is how
+you reach the 11 opt-in detectors (`--detector` also does, and the two are mutually
+exclusive).
+
+Moved out of the README, not deleted: the bucket taxonomy, the CDO numbers, the
+`legacyL3UnknownRate`/`realUnknownRateLegacyIncludingAmbiguous` distinctions and the
+`scripts/cdo-gate` reproduction now live in **`docs/resolution.md`**; the pipeline diagram
+and the module map now live in **`docs/architecture.md`**. Both are linked from a
+"Working on the engine itself" section. The telemetry section survives close to verbatim.
+
+Design input on the restructure came from an independent review by `claude-fable-5`
+(prompted with the README, CLAUDE.md, and the three CLI sources).
+
 ### Added - `src/program/pack`: the dependency-pack codec (`DepPack` to bytes and back)
 
 One dependency app's extraction output, encoded with `postcard` (new dependency)
