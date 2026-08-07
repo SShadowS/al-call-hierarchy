@@ -3169,7 +3169,6 @@ mod tests {
     fn test_origin() -> Origin {
         Origin {
             kind_text: "",
-            ts_id: 0,
             byte: 0..0,
             start: Point { row: 0, column: 0 },
             end: Point { row: 0, column: 0 },

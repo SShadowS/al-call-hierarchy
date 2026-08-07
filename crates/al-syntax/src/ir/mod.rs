@@ -37,10 +37,6 @@ pub struct Point {
 pub struct Origin {
     /// The raw grammar kind string, fed verbatim to anchor `syntax_kind` (parity).
     pub kind_text: &'static str,
-    /// tree-sitter `node.id()`. EPHEMERAL — valid only within the single lowering
-    /// pass that built this `AlFile` (used to key L2 op/callsite maps). NEVER
-    /// serialize or compare across parses; tree-sitter recycles ids.
-    pub ts_id: usize,
     pub byte: Range<usize>,
     pub start: Point,
     pub end: Point,

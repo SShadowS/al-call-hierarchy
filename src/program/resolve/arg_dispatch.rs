@@ -2194,7 +2194,6 @@ mod tests {
     fn test_origin() -> al_syntax::ir::Origin {
         al_syntax::ir::Origin {
             kind_text: "",
-            ts_id: 0,
             byte: 0..0,
             start: al_syntax::ir::Point { row: 0, column: 0 },
             end: al_syntax::ir::Point { row: 0, column: 0 },
