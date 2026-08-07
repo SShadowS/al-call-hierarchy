@@ -1163,9 +1163,26 @@ fn main() {
         dep_layer.dep_routines.len()
     );
 
+    // ---- The RoutineMeta tier, which is over half the payload -----------
+    // `DeclSurface::build_split` already produces exactly the dep-tier
+    // RoutineMeta map (`decl_surface.rs:115-146`). This is NOT optional: a
+    // pack without RoutineMeta measures roughly a third of the real bytes
+    // (adding it took the fixture pack from 94,514 to 248,911 — 2.6x), and it
+    // is not derivable on a hit because `from_decl` needs a `RoutineDecl`.
+    // A gate run without it is a floor, not a decision.
+    let decl_surface = DeclSurface::build_split(&graph, &parsed, primary_app_ref);
+    let dep_meta: Arc<DepMetaMap> = decl_surface.freeze_dep_tier(primary_app_ref);
+    println!("routine_meta entries: {}", dep_meta.len());
+    assert!(
+        !dep_meta.is_empty(),
+        "the dep RoutineMeta tier is EMPTY — the pack would measure nodes only and the \
+         gate would be invalid. Check that the workspace actually has source-bearing \
+         dependencies."
+    );
+
     // ---- Group into per-app packs, mirroring the real hit path ----------
     // One pack per non-primary app, which is the unit spec step 5 loads.
-    let mut per_app: std::collections::BTreeMap<u32, (Vec<_>, Vec<_>)> =
+    let mut per_app: std::collections::BTreeMap<u32, (Vec<_>, Vec<_>, Vec<_>)> =
         std::collections::BTreeMap::new();
     for o in &dep_layer.dep_objects {
         per_app.entry(o.id.app.0).or_default().0.push(o.clone());
@@ -1173,10 +1190,17 @@ fn main() {
     for r in &dep_layer.dep_routines {
         per_app.entry(r.id.object.app.0).or_default().1.push(r.clone());
     }
+    for (id, meta) in dep_meta.iter() {
+        per_app
+            .entry(id.object.app.0)
+            .or_default()
+            .2
+            .push((id.clone(), meta.clone()));
+    }
 
     let packs: Vec<Vec<u8>> = per_app
         .iter()
-        .map(|(app_ix, (objects, routines))| {
+        .map(|(app_ix, (objects, routines, routine_meta))| {
             let mut pack = DepPack {
                 schema: PACK_SCHEMA,
                 app_guid: format!("app-{app_ix}"),
@@ -1190,6 +1214,7 @@ fn main() {
                     parse_status_recovered: false,
                     objects: objects.clone(),
                     routines: routines.clone(),
+                    routine_meta: routine_meta.clone(),
                 }],
                 self_hash: String::new(),
             };
@@ -1227,6 +1252,13 @@ fn main() {
                 let bytes = std::fs::read(p).expect("read");
                 let mut pack = decode(&bytes).expect("decode");
                 // Guid -> AppRef re-intern, which the real hit path pays.
+                //
+                // This is NOT optional and NOT decoration. `AppRef` is a per-run
+                // interning index (`node.rs:26-40` hands out `AppRef(apps.len())` in
+                // encounter order), so every node id loaded from a pack carries a
+                // number that means something different this run. Spec §13 requires
+                // the gate to time this. Miss any of the THREE id sites per routine
+                // and the measurement is a floor rather than the cost of a hit.
                 let app_ref = AppRef(pack.app_guid.trim_start_matches("app-").parse().unwrap_or(0));
                 for f in &mut pack.files {
                     for o in &mut f.objects {
@@ -1234,6 +1266,12 @@ fn main() {
                     }
                     for r in &mut f.routines {
                         r.id.object.app = app_ref;
+                    }
+                    // The third site: `routine_meta` is keyed by `RoutineNodeId`,
+                    // which embeds `ObjectNodeId.app`. An earlier revision of this
+                    // bench predated `routine_meta` and remapped only the two above.
+                    for (id, _meta) in &mut f.routine_meta {
+                        id.object.app = app_ref;
                     }
                 }
                 pack
