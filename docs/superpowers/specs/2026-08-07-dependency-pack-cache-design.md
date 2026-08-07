@@ -302,6 +302,8 @@ run. Packs never make dependency cost proportional to workspace size.
 
 ## §14 — Build order
 
+0. **Preparatory corrections** (§17). Doc and dead-code cleanup inside territory this spec
+   touches; clears one open question out of step 2 before it starts.
 1. **Light snapshot** + the key-equality test (§10). Standalone value; prerequisite.
 2. **Serialization surface** for `ObjectNode` / `RoutineNode` / `RoutineMeta` and their
    field-type closure. `node_extract.rs` has zero serde today.
@@ -320,6 +322,10 @@ pack cardinality is bounded by (BC versions × localizations touched) and pack e
 *meant* to live indefinitely — that is the base-version library premise of §2. Record the
 reasoning, not merely the debt. If §2 is falsified, this decision must be revisited with it.
 
+Note that `preflight_cache`'s unpruned state is currently *mis-documented* as avoided;
+§17.1 corrects that claim as part of step 0, so this section's "third" is honest rather than
+contradicted by the module it cites.
+
 ## §16 — Live risks
 
 - **§2's hit-rate premise is domain knowledge, not a measurement.** Low observed hit rate
@@ -329,6 +335,81 @@ reasoning, not merely the debt. If §2 is falsified, this decision must be revis
   narrow it only with the canary in place.
 - **`al_syntax::parse` constructs a fresh `tree_sitter::Parser` and calls `set_language` per
   file** (`crates/al-syntax/src/parse.rs:11-14`); there are no thread-local parsers anywhere
-  in the tree, despite CLAUDE.md's Core Patterns section claiming "Thread-local parsers
-  process files concurrently". Unrelated to packs, inside the same span, cheap to fix,
-  tracked separately.
+  in the tree. Inside the same span packs target, but a genuine change to the parse path
+  rather than a docs fix — see §17.5, which keeps it a separate deliverable with its own
+  before/after measurement.
+
+---
+
+## §17 — Preparatory corrections (step 0)
+
+Four documentation/dead-code defects found while writing this spec, all inside territory it
+touches. Each was verified against source; none is speculative. §17.1–§17.4 are step 0.
+§17.5 is a code change tracked separately.
+
+### §17.1 — `preflight_cache.rs` claims a defect it half-inherited
+
+`preflight_cache.rs:66-70` states the `snapshot::cache` defect "(no override, no pruning)" is
+one "that this module deliberately does not copy". It copied half: the override exists
+(`ALSEM_PREFLIGHT_CACHE_DIR`), but **pruning was never implemented** — no `prune`, no
+`max_age`/`max_size`, no `remove_file` outside failed-rename cleanup — despite that module's
+own spec (`2026-08-01-preflight-verdict-cache.md` §4) requiring size/age bounds.
+
+This is the over-claim class CLAUDE.md's Testing Philosophy section already names ("docs
+asserting guards are 'each pinned executably' when only some are"). **Fix:** correct the doc
+to claim only the override, and state the missing pruning as known debt. Do NOT implement
+pruning here — that is a separate decision, and §15 deliberately accepts unbounded growth for
+packs.
+
+### §17.2 — CLAUDE.md's thread-local parser claim is false
+
+CLAUDE.md:210 reads "**Parallel parsing** (`rayon`): Thread-local parsers process files
+concurrently". The rayon half is true (`parse_snapshot` uses `par_iter` on `big_stack_pool`,
+`src/snapshot/parse.rs:86-95`). The thread-local half is false: repo-wide, `thread_local`
+occurs only at `src/engine/perf_trace.rs:395` and
+`src/engine/gate/policy/predicate_evaluator.rs:168`, neither a parser.
+
+**Fix (doc only, here):** state what is actually true — parallel per-file parsing on a
+dedicated rayon pool, one parser constructed per file. The code change is §17.5.
+
+### §17.3 — `Origin.ts_id` is a dead field behind a doc naming a dead consumer
+
+Declared at `crates/al-syntax/src/ir/mod.rs:43`, written once at `lower/mod.rs:1909`, read by
+**zero** production code. Its doc says "NEVER serialize… tree-sitter recycles ids" and names
+the L2 op/callsite maps as its consumer; that consumer no longer exists. The only remaining
+mentions are three `ts_id: 0` test constructions and comments in
+`tests/lsp/lsp_incremental_parity.rs`.
+
+The prior spec already reached this conclusion: "The stated blocker is guarding a dead field;
+delete it rather than designing around it."
+
+**Fix:** delete the field and its doc. Doing this in step 0 removes a standing question from
+step 2's serialization surface before that work begins.
+
+### §17.4 — CLAUDE.md's `.scm` paths are wrong
+
+CLAUDE.md:155 and :292 reference `queries/highlights.scm` / `queries/tags.scm`; both live at
+`tree-sitter-al/queries/`. The substantive claim is sound — the files exist, reference the
+same grammar node names, and therefore justify keeping `src/language.rs`'s dead query
+constants (`DEFINITIONS`/`CALLS`/`EVENT_SUBSCRIBERS`/`VARIABLES`, confirmed at zero call
+sites repo-wide). **Fix:** correct the paths only.
+
+### §17.5 — Per-file parser construction (separate deliverable)
+
+`al_syntax::parse` builds a fresh `tree_sitter::Parser` and calls `set_language` on every
+call (`crates/al-syntax/src/parse.rs:11-14`), so a DO run pays that ~11,856 times for
+dependencies alone plus once per workspace file.
+
+Not folded into step 0 because it is a real change to the parse path and deserves its own
+before/after measurement rather than riding in a docs commit. **No saving is claimed here —
+it must be measured, not asserted.**
+
+Worth doing independently of packs: a pack hit skips this entirely, but the miss path (the
+first analysis of any new base version) and every workspace file still pay it on every run.
+
+**Checked and found clean while hunting** — recorded so the sweep is not repeated: the
+grammar pin is genuinely v3.2.0; the goldens table's "30 golden directories / 9 test targets"
+is exact (`tests/goldens` is a parent, not a golden dir); every other `src/`, `crates/`,
+`scripts/`, `tests/` path in CLAUDE.md resolves; `scripts/check-goldens` and
+`scripts/git-hooks/pre-commit` exist with `core.hooksPath` configured; and
+`tests/perf_support/` really does declare two publishers and two subscribers per file.
