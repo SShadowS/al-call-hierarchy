@@ -110,13 +110,16 @@
 //! `build_full` — the two are never expected to match and comparing them
 //! would tell us nothing about correctness.
 //!
-//! `DeclEntry.origin`/`.name_origin` (`al_syntax::ir::Origin`) themselves
-//! carry no derived equality at all, and their `ts_id` field is explicitly
-//! documented as EPHEMERAL ("valid only within the single lowering pass...
-//! NEVER compare across parses, tree-sitter recycles ids") — `canon_origin`
-//! below projects away `kind_text`/`ts_id` and keeps only the byte range and
-//! start/end `Point`s, which — unlike `ts_id` — really are stable, since
-//! both sides parse the exact same on-disk bytes.
+//! `DeclEntry.origin`/`.name_origin` (`al_syntax::ir::Origin`) now derive
+//! `PartialEq`/`Eq` structurally (Task 5's pack codec needed a total wire
+//! round-trip assertion — `crates/al-syntax/src/ir/mod.rs`), but still no
+//! `Ord`, and `canon_decls` below sorts its output to make the comparison
+//! order-independent — so `canon_origin` projects each `Origin` into a
+//! sortable tuple, dropping `kind_text` and keeping only the byte range and
+//! start/end `Point`s, which really are stable, since both sides parse the
+//! exact same on-disk bytes.
+//! (`ts_id` was deleted outright — it was written once by the lowerer and read
+//! by no production code; see the pack-cache spec §17.3.)
 //!
 //! **`dep_meta`/`dep_texts`/`workspace_root` (T3 Task 11 review
 //! fix-wave — the three `LspSnapshot` fields Task 11 added for
@@ -143,7 +146,7 @@
 //! `UnknownReason` payload (subsumed by `EvidenceKind`, itself a deliberate
 //! serialization-boundary projection elsewhere in this engine), `LspSnapshot::
 //! generation` (monotonic counter vs. always-`0`, not a correctness signal),
-//! `Origin::kind_text`/`ts_id` (EPHEMERAL by the IR's own doc).
+//! `Origin::kind_text` (excluded from the comparison; see the module doc).
 //! `Route::receiver_tier` is excluded too: its own doc (`edge.rs`) already
 //! states it is diagnostic-only and is never compared against the committed
 //! semantic goldens, for the same serialization-boundary discipline as
@@ -263,9 +266,11 @@ fn canon_edges(edges: &[ClassifiedEdge]) -> Vec<CanonEdge> {
 }
 
 /// `(byte start, byte end, start (row, col), end (row, col))` — projects
-/// away `Origin`'s `kind_text`/EPHEMERAL `ts_id` fields (see the module
-/// doc). `Origin` itself carries no derived `PartialEq`/`Ord`, so this is
-/// the only way to compare two `Origin`s at all.
+/// away `Origin`'s `kind_text` field (see the module doc). `Origin` itself
+/// now derives `PartialEq`/`Eq`, but still no `Ord`, so this tuple is what
+/// makes an `Origin` sortable — needed because `canon_decls` sorts its
+/// output for an order-independent comparison — not a workaround for a
+/// missing `Origin::eq`.
 type CanonOrigin = (usize, usize, (u32, u32), (u32, u32));
 
 fn canon_origin(o: &al_syntax::ir::Origin) -> CanonOrigin {

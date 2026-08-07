@@ -196,6 +196,11 @@ pub struct RoutineNodeId {
     /// fails closed to an empty result, never a loud error, in every real
     /// editor. Serializing through a decimal string carries the exact value
     /// losslessly regardless of the receiving language's number type.
+    ///
+    /// The string form applies to HUMAN-READABLE formats only. A `u64` is
+    /// exact on a binary format by construction, so the dependency pack
+    /// (`crate::program::pack`, postcard) carries a plain varint — see
+    /// [`sig_fp_as_string`].
     #[serde(with = "sig_fp_as_string")]
     pub sig_fp: u64,
 }
@@ -205,16 +210,35 @@ pub struct RoutineNodeId {
 /// anywhere in this identity chain, so this module is private and narrowly
 /// scoped to it; a future `u64` field needing the same treatment should
 /// reuse this module rather than duplicating it.
+///
+/// Gated on `is_human_readable()`, which is TRUE for `serde_json` and FALSE
+/// for postcard. The reason to gate rather than apply it unconditionally is
+/// cost, and it is not hypothetical: every `RoutineNodeId` in a dependency
+/// pack would otherwise pay a `to_string()` on encode and a `String` +
+/// `parse::<u64>()` on decode. At the ~127k-routine scale a pack is built for
+/// that is ~253k String allocations and integer parses per load — the same
+/// order as the `kind_text: String` cost the `Origin` codec exists to avoid,
+/// and it would have made the spec §13 measurement pessimistic by an amount
+/// that has nothing to do with the format under test.
+///
+/// The JSON contract is untouched: `is_human_readable()` is true there, so an
+/// LSP client still receives (and must still send) the quoted decimal string.
 mod sig_fp_as_string {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
-        v.to_string().serialize(s)
+        if s.is_human_readable() {
+            return v.to_string().serialize(s);
+        }
+        v.serialize(s)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
-        let s = String::deserialize(d)?;
-        s.parse::<u64>().map_err(serde::de::Error::custom)
+        if d.is_human_readable() {
+            let s = String::deserialize(d)?;
+            return s.parse::<u64>().map_err(serde::de::Error::custom);
+        }
+        u64::deserialize(d)
     }
 }
 
@@ -307,6 +331,39 @@ mod tests {
             "serialized JSON must embed sig_fp as a quoted string; got {s}"
         );
         let back: RoutineNodeId = serde_json::from_str(&s).expect("from_str");
+        assert_eq!(back, id);
+    }
+
+    /// The other half of the `is_human_readable()` gate: on a BINARY format the
+    /// decimal-string detour is pure cost (a `to_string` per encode, then a
+    /// `String` allocation and a `parse` per decode) and buys nothing, because
+    /// a `u64` is exact there. The dependency pack carries ~127k of these, so
+    /// this is the difference between a varint and ~253k heap allocations per
+    /// load.
+    #[test]
+    fn sig_fp_is_a_plain_u64_on_a_binary_format() {
+        let id = RoutineNodeId {
+            object: ObjectNodeId {
+                app: AppRef(0),
+                kind: ObjectKind::Codeunit,
+                key: ObjKey::Id(1),
+            },
+            name_lc: "foo".to_string(),
+            enclosing_member_lc: None,
+            params_count: 2,
+            sig_fp: u64::MAX - 1,
+        };
+
+        let bytes = postcard::to_stdvec(&id).expect("postcard encode");
+        let decimal = (u64::MAX - 1).to_string();
+        assert!(
+            !bytes
+                .windows(decimal.len())
+                .any(|w| w == decimal.as_bytes()),
+            "the binary encoding must not contain the decimal text {decimal:?} — \
+             sig_fp is going over the wire as a string"
+        );
+        let back: RoutineNodeId = postcard::from_bytes(&bytes).expect("postcard decode");
         assert_eq!(back, id);
     }
 }

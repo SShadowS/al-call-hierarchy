@@ -3112,6 +3112,7 @@ pub fn emit_event_flow_edges(
 mod tests {
     use super::*;
 
+    use crate::engine::deps::symbol_reference::SubtypeTag;
     use crate::program::graph::{ObjectIndex, ProgramGraph};
     use crate::program::node::AppRegistry;
     use crate::program::node_extract::{
@@ -4618,7 +4619,7 @@ pageextension 52911 "ExtA" extends BasePage
                     is_var: false,
                     subtype_id: None,
                     subtype_raw_name: None,
-                    subtype_tag: "no_subtype",
+                    subtype_tag: SubtypeTag::NoSubtype,
                 }]),
             ),
             abi_node(&dep_obj_id, 222, AbiParams::Missing),
@@ -4756,7 +4757,7 @@ codeunit 50611 "MixedCU"
                 is_var: false,
                 subtype_id: None,
                 subtype_raw_name: None,
-                subtype_tag: "no_subtype",
+                subtype_tag: SubtypeTag::NoSubtype,
             }]),
         });
         graph.routines.sort_by(|a, b| a.id.cmp(&b.id));

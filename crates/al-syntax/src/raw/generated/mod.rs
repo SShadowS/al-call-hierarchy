@@ -3,7 +3,8 @@
 // Source file: crates/al-syntax/src/raw/generated/mod.rs
 
 //! Generated raw grammar vocabulary + typed nodes. Regenerate with
-//! `cargo run -p xtask -- gen-syntax`; CI runs `--check` to catch drift.
+//! `cargo run -p xtask -- gen-syntax`; CI catches drift by REGENERATING and
+//! diffing (`scripts/ci-steps gen-syntax`), not with `--check`.
 
 mod field;
 mod nodes;

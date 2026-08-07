@@ -33,14 +33,15 @@ pub struct Point {
 }
 
 /// Provenance of an IR node: where it came from in source, for anchors + findings.
-#[derive(Clone, Debug)]
+///
+/// `PartialEq`/`Eq` are structural over every field, so a test that round-trips an
+/// `Origin` through a wire format can assert equality TOTALLY rather than
+/// field-by-field — a hand-listed comparison silently stops covering any field
+/// added later (`src/program/pack`'s codec tests rely on this).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Origin {
     /// The raw grammar kind string, fed verbatim to anchor `syntax_kind` (parity).
     pub kind_text: &'static str,
-    /// tree-sitter `node.id()`. EPHEMERAL — valid only within the single lowering
-    /// pass that built this `AlFile` (used to key L2 op/callsite maps). NEVER
-    /// serialize or compare across parses; tree-sitter recycles ids.
-    pub ts_id: usize,
     pub byte: Range<usize>,
     pub start: Point,
     pub end: Point,

@@ -64,6 +64,11 @@ serde_yaml = "0.9"
 # (`new RegExp('^'+escaped+'$','i')`) faithfully (see policy `glob_compile`).
 regex = "1"
 
+# Dependency-pack persistence (`src/program/pack`). Non-self-describing, varint
+# framed — field names never reach the wire, which is the whole reason a pack of
+# ~127k routines is worth writing at all. `use-std` for `to_stdvec`.
+postcard = { version = "1", features = ["use-std"] }
+
 # Hashing (R0 identity encoders and snapshot content identity)
 sha2 = "0.10"
 blake3 = { version = "1" }
@@ -198,6 +203,14 @@ harness = false
 # corpus — pins the rung-1/rung-2 incremental-updater budgets.
 [[bench]]
 name = "engine_stages"
+harness = false
+
+# The dependency pack format's go/no-go gate (spec §13). `harness = false`: a
+# plain `main` measuring the hit-path SHAPE end to end, not a criterion
+# micro-benchmark. Needs `PACK_BENCH_WS` pointed at a real BC workspace and
+# exits non-zero without it.
+[[bench]]
+name = "dep_pack_roundtrip"
 harness = false
 
 [profile.release]

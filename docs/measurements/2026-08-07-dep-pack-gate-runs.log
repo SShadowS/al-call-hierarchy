@@ -1,0 +1,305 @@
+# Raw output of benches/dep_pack_roundtrip.rs — the Task 6 format gate.
+# Machine: AMD Ryzen 9 9950X3D (16c/32t), 93.7 GB RAM, Windows 11 26200.
+# Profile: release-fast. PACK_BENCH_WS=u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+# Date: 2026-08-07. Machine shared with concurrent agent processes (see ledger).
+# Every round in the ledger's table is transcribed from this file.
+
+########## RUN 1 ##########
+workspace: u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+population: 10800 dep source files, 10662 dep objects, 119773 dep routines
+WHAT A HIT REPLACES (same corpus): parse_snapshot 1114.4 ms + build_dep_layer 221.8 ms = 1336.2 ms
+  (whole snapshot, deps + primary: 11352 source files across 11 apps)
+  Continia Document Output                   29.0.0.0    552 files      0 objects       0 routines  [PRIMARY — never packed]
+  Continia Delivery Network                29.0.0.124377    509 files    509 objects    4657 routines
+  Continia KYC                             29.0.0.117497     65 files     65 objects     687 routines
+  Continia Connector App                   29.0.0.124334     11 files     11 objects      43 routines
+  Base Application                         28.1.49838.50268   8073 files   7990 objects  100944 routines
+  Continia Core                            29.0.0.122270    291 files    291 objects    3244 routines
+  System Application                       28.1.49838.50268   1319 files   1299 objects    8738 routines
+  System                                   28.0.50197.0    361 files    332 objects     290 routines
+  Application                              28.1.49838.50268      0 files      0 objects       0 routines  [symbol-only: ABI nodes, no RoutineMeta]
+  Continia System Application              29.0.0.124334     75 files     69 objects     791 routines
+  Business Foundation                      28.1.49838.50268     96 files     96 objects     379 routines
+routine_meta entries: 119773
+setup: 2146.3 ms
+pack files (per-file shape): 7416
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-file: 9 packs, 33.25 MB total
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-app: 9 packs, 32.83 MB total
+
+=== shape A: one PackedFile per SOURCE FILE (spec §6 shape; 7416 files) ===
+  blake3 over every pack (parallel): 3.6 ms
+  round 0: 90.5 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 85.5 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 85.0 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 82.7 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 7.8 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 4.3 ms, 4657 routines
+    critical path: the slowest pack is 91% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 11.0 ms
+
+=== shape B: one synthetic PackedFile per APP (the brief's shape) ===
+  blake3 over every pack (parallel): 3.3 ms
+  round 0: 110.2 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 106.2 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 101.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 99.3 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 10.6 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 5.7 ms, 4657 routines
+    critical path: the slowest pack is 90% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 10.5 ms
+
+=== seam cost NOT in the gate number: Arc<DepMetaMap> from the packed tier ===
+  73.4 ms to build the 119773-entry map (serial, as the seam would)
+
+slowest round: shape A 90.5 ms, shape B 110.2 ms — the verdict takes the larger, 110.2 ms
+GATE: under ~200 ms -> proceed with postcard. Approaching ~600 ms -> switch to the shared string table and re-measure.
+
+########## RUN 2 ##########
+workspace: u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+population: 10800 dep source files, 10662 dep objects, 119773 dep routines
+WHAT A HIT REPLACES (same corpus): parse_snapshot 1064.5 ms + build_dep_layer 230.4 ms = 1294.9 ms
+  (whole snapshot, deps + primary: 11352 source files across 11 apps)
+  Continia Document Output                   29.0.0.0    552 files      0 objects       0 routines  [PRIMARY — never packed]
+  Continia Delivery Network                29.0.0.124377    509 files    509 objects    4657 routines
+  Continia KYC                             29.0.0.117497     65 files     65 objects     687 routines
+  Continia Connector App                   29.0.0.124334     11 files     11 objects      43 routines
+  Base Application                         28.1.49838.50268   8073 files   7990 objects  100944 routines
+  Continia Core                            29.0.0.122270    291 files    291 objects    3244 routines
+  System Application                       28.1.49838.50268   1319 files   1299 objects    8738 routines
+  System                                   28.0.50197.0    361 files    332 objects     290 routines
+  Application                              28.1.49838.50268      0 files      0 objects       0 routines  [symbol-only: ABI nodes, no RoutineMeta]
+  Continia System Application              29.0.0.124334     75 files     69 objects     791 routines
+  Business Foundation                      28.1.49838.50268     96 files     96 objects     379 routines
+routine_meta entries: 119773
+setup: 2059.4 ms
+pack files (per-file shape): 7416
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-file: 9 packs, 33.25 MB total
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-app: 9 packs, 32.83 MB total
+
+=== shape A: one PackedFile per SOURCE FILE (spec §6 shape; 7416 files) ===
+  blake3 over every pack (parallel): 3.1 ms
+  round 0: 71.0 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 82.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 80.2 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 79.0 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 7.2 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 5.0 ms, 4657 routines
+    critical path: the slowest pack is 95% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 7.4 ms
+
+=== shape B: one synthetic PackedFile per APP (the brief's shape) ===
+  blake3 over every pack (parallel): 3.3 ms
+  round 0: 88.4 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 88.6 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 90.3 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 89.4 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 7.8 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 4.7 ms, 4657 routines
+    critical path: the slowest pack is 99% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 7.5 ms
+
+=== seam cost NOT in the gate number: Arc<DepMetaMap> from the packed tier ===
+  68.9 ms to build the 119773-entry map (serial, as the seam would)
+
+slowest round: shape A 82.7 ms, shape B 90.3 ms — the verdict takes the larger, 90.3 ms
+GATE: under ~200 ms -> proceed with postcard. Approaching ~600 ms -> switch to the shared string table and re-measure.
+
+########## RUN 3 ##########
+workspace: u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+population: 10800 dep source files, 10662 dep objects, 119773 dep routines
+WHAT A HIT REPLACES (same corpus): parse_snapshot 977.1 ms + build_dep_layer 227.4 ms = 1204.5 ms
+  (whole snapshot, deps + primary: 11352 source files across 11 apps)
+  Continia Document Output                   29.0.0.0    552 files      0 objects       0 routines  [PRIMARY — never packed]
+  Continia Delivery Network                29.0.0.124377    509 files    509 objects    4657 routines
+  Continia KYC                             29.0.0.117497     65 files     65 objects     687 routines
+  Continia Connector App                   29.0.0.124334     11 files     11 objects      43 routines
+  Base Application                         28.1.49838.50268   8073 files   7990 objects  100944 routines
+  Continia Core                            29.0.0.122270    291 files    291 objects    3244 routines
+  System Application                       28.1.49838.50268   1319 files   1299 objects    8738 routines
+  System                                   28.0.50197.0    361 files    332 objects     290 routines
+  Application                              28.1.49838.50268      0 files      0 objects       0 routines  [symbol-only: ABI nodes, no RoutineMeta]
+  Continia System Application              29.0.0.124334     75 files     69 objects     791 routines
+  Business Foundation                      28.1.49838.50268     96 files     96 objects     379 routines
+routine_meta entries: 119773
+setup: 1954.5 ms
+pack files (per-file shape): 7416
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-file: 9 packs, 33.25 MB total
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-app: 9 packs, 32.83 MB total
+
+=== shape A: one PackedFile per SOURCE FILE (spec §6 shape; 7416 files) ===
+  blake3 over every pack (parallel): 3.2 ms
+  round 0: 71.8 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 66.2 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 84.8 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 83.7 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 7.8 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 5.3 ms, 4657 routines
+    critical path: the slowest pack is 99% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 8.4 ms
+
+=== shape B: one synthetic PackedFile per APP (the brief's shape) ===
+  blake3 over every pack (parallel): 3.1 ms
+  round 0: 86.5 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 87.9 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 84.9 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 83.9 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 9.8 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 5.6 ms, 4657 routines
+    critical path: the slowest pack is 96% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 6.7 ms
+
+=== seam cost NOT in the gate number: Arc<DepMetaMap> from the packed tier ===
+  74.0 ms to build the 119773-entry map (serial, as the seam would)
+
+slowest round: shape A 84.8 ms, shape B 87.9 ms — the verdict takes the larger, 87.9 ms
+GATE: under ~200 ms -> proceed with postcard. Approaching ~600 ms -> switch to the shared string table and re-measure.
+
+########## RUN 4 ##########
+workspace: u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+population: 10800 dep source files, 10662 dep objects, 119773 dep routines
+WHAT A HIT REPLACES (same corpus): parse_snapshot 1056.8 ms + build_dep_layer 214.6 ms = 1271.4 ms
+  (whole snapshot, deps + primary: 11352 source files across 11 apps)
+  Continia Document Output                   29.0.0.0    552 files      0 objects       0 routines  [PRIMARY — never packed]
+  Continia Delivery Network                29.0.0.124377    509 files    509 objects    4657 routines
+  Continia KYC                             29.0.0.117497     65 files     65 objects     687 routines
+  Continia Connector App                   29.0.0.124334     11 files     11 objects      43 routines
+  Base Application                         28.1.49838.50268   8073 files   7990 objects  100944 routines
+  Continia Core                            29.0.0.122270    291 files    291 objects    3244 routines
+  System Application                       28.1.49838.50268   1319 files   1299 objects    8738 routines
+  System                                   28.0.50197.0    361 files    332 objects     290 routines
+  Application                              28.1.49838.50268      0 files      0 objects       0 routines  [symbol-only: ABI nodes, no RoutineMeta]
+  Continia System Application              29.0.0.124334     75 files     69 objects     791 routines
+  Business Foundation                      28.1.49838.50268     96 files     96 objects     379 routines
+routine_meta entries: 119773
+setup: 2035.4 ms
+pack files (per-file shape): 7416
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-file: 9 packs, 33.25 MB total
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-app: 9 packs, 32.83 MB total
+
+=== shape A: one PackedFile per SOURCE FILE (spec §6 shape; 7416 files) ===
+  blake3 over every pack (parallel): 3.1 ms
+  round 0: 71.3 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 68.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 69.2 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 68.1 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 8.0 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 3.8 ms, 4657 routines
+    critical path: the slowest pack is 96% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 7.1 ms
+
+=== shape B: one synthetic PackedFile per APP (the brief's shape) ===
+  blake3 over every pack (parallel): 3.1 ms
+  round 0: 79.6 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 88.3 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 80.0 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 78.8 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 9.5 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 4.4 ms, 4657 routines
+    critical path: the slowest pack is 89% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 6.8 ms
+
+=== seam cost NOT in the gate number: Arc<DepMetaMap> from the packed tier ===
+  70.5 ms to build the 119773-entry map (serial, as the seam would)
+
+slowest round: shape A 71.3 ms, shape B 88.3 ms — the verdict takes the larger, 88.3 ms
+GATE: under ~200 ms -> proceed with postcard. Approaching ~600 ms -> switch to the shared string table and re-measure.
+
+########## RUN 5 ##########
+workspace: u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+population: 10800 dep source files, 10662 dep objects, 119773 dep routines
+WHAT A HIT REPLACES (same corpus): parse_snapshot 1014.5 ms + build_dep_layer 235.9 ms = 1250.5 ms
+  (whole snapshot, deps + primary: 11352 source files across 11 apps)
+  Continia Document Output                   29.0.0.0    552 files      0 objects       0 routines  [PRIMARY — never packed]
+  Continia Delivery Network                29.0.0.124377    509 files    509 objects    4657 routines
+  Continia KYC                             29.0.0.117497     65 files     65 objects     687 routines
+  Continia Connector App                   29.0.0.124334     11 files     11 objects      43 routines
+  Base Application                         28.1.49838.50268   8073 files   7990 objects  100944 routines
+  Continia Core                            29.0.0.122270    291 files    291 objects    3244 routines
+  System Application                       28.1.49838.50268   1319 files   1299 objects    8738 routines
+  System                                   28.0.50197.0    361 files    332 objects     290 routines
+  Application                              28.1.49838.50268      0 files      0 objects       0 routines  [symbol-only: ABI nodes, no RoutineMeta]
+  Continia System Application              29.0.0.124334     75 files     69 objects     791 routines
+  Business Foundation                      28.1.49838.50268     96 files     96 objects     379 routines
+routine_meta entries: 119773
+setup: 2014.9 ms
+pack files (per-file shape): 7416
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-file: 9 packs, 33.25 MB total
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-app: 9 packs, 32.83 MB total
+
+=== shape A: one PackedFile per SOURCE FILE (spec §6 shape; 7416 files) ===
+  blake3 over every pack (parallel): 3.6 ms
+  round 0: 74.1 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 79.1 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 75.1 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 74.0 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 8.0 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 4.8 ms, 4657 routines
+    critical path: the slowest pack is 94% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 6.9 ms
+
+=== shape B: one synthetic PackedFile per APP (the brief's shape) ===
+  blake3 over every pack (parallel): 3.2 ms
+  round 0: 89.4 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 87.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 91.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 90.6 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 9.0 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 5.2 ms, 4657 routines
+    critical path: the slowest pack is 99% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 8.5 ms
+
+=== seam cost NOT in the gate number: Arc<DepMetaMap> from the packed tier ===
+  72.5 ms to build the 119773-entry map (serial, as the seam would)
+
+slowest round: shape A 79.1 ms, shape B 91.7 ms — the verdict takes the larger, 91.7 ms
+GATE: under ~200 ms -> proceed with postcard. Approaching ~600 ms -> switch to the shared string table and re-measure.
+
+########## RUN 6 ##########
+workspace: u:/Git/DO.Support-Fuckup/DocumentOutput/Cloud
+population: 10800 dep source files, 10662 dep objects, 119773 dep routines
+WHAT A HIT REPLACES (same corpus): parse_snapshot 990.6 ms + build_dep_layer 222.0 ms = 1212.6 ms
+  (whole snapshot, deps + primary: 11352 source files across 11 apps)
+  Continia Document Output                   29.0.0.0    552 files      0 objects       0 routines  [PRIMARY — never packed]
+  Continia Delivery Network                29.0.0.124377    509 files    509 objects    4657 routines
+  Continia KYC                             29.0.0.117497     65 files     65 objects     687 routines
+  Continia Connector App                   29.0.0.124334     11 files     11 objects      43 routines
+  Base Application                         28.1.49838.50268   8073 files   7990 objects  100944 routines
+  Continia Core                            29.0.0.122270    291 files    291 objects    3244 routines
+  System Application                       28.1.49838.50268   1319 files   1299 objects    8738 routines
+  System                                   28.0.50197.0    361 files    332 objects     290 routines
+  Application                              28.1.49838.50268      0 files      0 objects       0 routines  [symbol-only: ABI nodes, no RoutineMeta]
+  Continia System Application              29.0.0.124334     75 files     69 objects     791 routines
+  Business Foundation                      28.1.49838.50268     96 files     96 objects     379 routines
+routine_meta entries: 119773
+setup: 1977.1 ms
+pack files (per-file shape): 7416
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-file: 9 packs, 33.25 MB total
+artifact C:\Users\SShadowS\AppData\Local\Temp\alsem-pack-gate\per-app: 9 packs, 32.83 MB total
+
+=== shape A: one PackedFile per SOURCE FILE (spec §6 shape; 7416 files) ===
+  blake3 over every pack (parallel): 3.1 ms
+  round 0: 69.8 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 76.0 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 82.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 81.5 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 8.1 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 4.2 ms, 4657 routines
+    critical path: the slowest pack is 99% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 7.9 ms
+
+=== shape B: one synthetic PackedFile per APP (the brief's shape) ===
+  blake3 over every pack (parallel): 3.1 ms
+  round 0: 89.1 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 1: 93.7 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+  round 2: 88.9 ms wall, 10662 objects / 119773 routines / 119773 routine_meta materialized
+    slowest pack: Base Application 28.1.49838.50268 — 87.7 ms, 100944 routines
+    slowest pack: System Application 28.1.49838.50268 — 9.3 ms, 8738 routines
+    slowest pack: Continia Delivery Network 29.0.0.124377 — 5.4 ms, 4657 routines
+    critical path: the slowest pack is 94% of the slowest round's wall time
+  read only, WARM (not a cold-cache measurement — see the fn comment): 7.6 ms
+
+=== seam cost NOT in the gate number: Arc<DepMetaMap> from the packed tier ===
+  67.9 ms to build the 119773-entry map (serial, as the seam would)
+
+slowest round: shape A 82.7 ms, shape B 93.7 ms — the verdict takes the larger, 93.7 ms
+GATE: under ~200 ms -> proceed with postcard. Approaching ~600 ms -> switch to the shared string table and re-measure.

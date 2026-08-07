@@ -431,7 +431,8 @@ fn event_teeth_excess_params_fails() {
 // ---------------------------------------------------------------------------
 
 use al_call_hierarchy::engine::deps::symbol_reference::{
-    AbiEventKind as SrAbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi,
+    AbiEventKind as SrAbiEventKind, AbiObject, AbiParameter, AbiRoutine, SubtypeTag,
+    SymbolReferenceAbi,
 };
 use al_call_hierarchy::program::node::AppRef;
 use al_call_hierarchy::program::resolve::abi_check::{
@@ -464,7 +465,7 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                         is_temporary: false,
                         subtype_id: None,
                         subtype_raw_name: None,
-                        subtype_tag: "no_subtype",
+                        subtype_tag: SubtypeTag::NoSubtype,
                     }],
                     return_type_text: None,
                     return_type_id: None,
@@ -487,7 +488,7 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                             is_temporary: false,
                             subtype_id: None,
                             subtype_raw_name: None,
-                            subtype_tag: "no_subtype",
+                            subtype_tag: SubtypeTag::NoSubtype,
                         },
                         AbiParameter {
                             name: "p2".into(),
@@ -496,7 +497,7 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                             is_temporary: false,
                             subtype_id: None,
                             subtype_raw_name: None,
-                            subtype_tag: "no_subtype",
+                            subtype_tag: SubtypeTag::NoSubtype,
                         },
                     ],
                     return_type_text: None,

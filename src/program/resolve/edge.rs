@@ -25,6 +25,7 @@
 //! across the crate.  The named accessors are the enforced API for consumers.
 
 use al_syntax::IdentifierFoldExt;
+use serde::{Deserialize, Serialize};
 
 use crate::program::node::{AppRef, RoutineNodeId};
 use crate::snapshot::TrustTier;
@@ -33,7 +34,7 @@ use crate::snapshot::TrustTier;
 pub type NodeId = RoutineNodeId;
 
 /// The kind of an ABI-boundary routine for routing and auditability.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AbiRoutineKind {
     Procedure,
     EventPublisher,
@@ -41,7 +42,7 @@ pub enum AbiRoutineKind {
 }
 
 /// The event classification for an ABI event publisher.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AbiEventKind {
     None,
     Integration,

@@ -1906,7 +1906,6 @@ pub(crate) fn origin_of(n: RawNode) -> Origin {
     let e = n.end_position();
     Origin {
         kind_text: n.kind_str(),
-        ts_id: n.id(),
         byte: n.byte_range(),
         start: Point {
             row: s.row as u32,

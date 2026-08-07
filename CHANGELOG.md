@@ -7,6 +7,209 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - `src/program/pack`: the dependency-pack codec (`DepPack` to bytes and back)
+
+One dependency app's extraction output, encoded with `postcard` (new dependency)
+and framed by a `PACK_SCHEMA` check plus a blake3 `self_hash`. Persistence ONLY —
+no engine wiring, no cache directory, no ingestion path: obtaining a pack, keying
+it and loading it into `build_dep_layer` is spec step 5. This exists so the
+format's round-trip cost can be measured on real data before that seam is built,
+which is where `docs/superpowers/specs/2026-08-07-dependency-pack-cache-design.md`
+§13 places the go/no-go.
+
+The app-identity HEADER is stored SYMBOLICALLY (guid/name/publisher/version),
+never as an `AppRef`. **The payload is a different matter, and a loader must know
+it:** `ObjectNodeId.app` IS an `AppRef` — a per-run interning index handed out in
+encounter order — and every packed routine carries three of them (`ObjectNode.id`,
+`RoutineNode.id`, the `routine_meta` key). Those ids are persisted as-is, so spec
+step 5 MUST re-intern every `AppRef` against the current run's `AppRegistry` before
+the nodes join a graph; skipping that yields silently-wrong graphs rather than
+errors. The re-intern deliberately does not happen inside `decode` and the codec
+exposes no surface for it, because spec §13 requires the gate to MEASURE that cost
+as part of the load.
+
+Per-file order is preserved because `dedup_routines_preserving_genuine_overloads`
+keeps the first occurrence per key, so a reordered pack changes which survivor wins
+(spec §12).
+
+`RoutineMeta` IS carried in the pack (`PackedFile::routine_meta`), which is why
+`RoutineMeta`/`ParamMeta` gained `Serialize`/`Deserialize`/`PartialEq`/`Eq`. It is
+not derivable on a hit — `RoutineMeta::from_decl` consumes a `RoutineDecl`, and the
+`ParsedUnit`s those come from are exactly what a hit avoids building — and nothing
+in `RoutineNode` can reconstruct `virtual_path`, the two `Origin`s, or per-param
+`ty`/`by_ref`. It is also the cost class the measurement exists to price, so a pack
+without it would make the gate a lower bound rather than a decision.
+
+`Origin.kind_text` is a `&'static str` (fed verbatim to anchor `syntax_kind` for
+parity) and so cannot `Deserialize`. Rather than changing the IR type, widening it
+to `String` (~253k extra allocations per load, forever, to carry a value from a
+closed 389-member set) or dropping it (an unaudited lossy field), the wire encodes
+it as a `RawKind` discriminant through a new fallible `RawKind::try_from_raw`;
+decode goes through `RawKind::as_str()`, which returns `&'static str`, so loading an
+`Origin` allocates nothing and the wire carries a varint. An unencodable kind means
+the app is simply not packed — cold path, fail-closed, never a panic — and because
+postcard discards `serde::ser::Error::custom` messages, `encode` re-walks the pack
+on the failure path only to name the offending file, routine and kind. The index is
+positional and so grammar-revision-unstable, which is sound only because `crates/`
+is inside the pack fingerprint closure (spec §8) — a human-readable dump has no such
+protection, so `is_human_readable()` gives JSON the kind STRING and the binary wire
+the varint.
+
+The wire is an envelope: `postcard(PackHeader { schema, self_hash })` followed by
+`postcard(DepPack)`, with `self_hash` `#[serde(skip)]` so the encoded pack IS the
+body the hash covers. `decode` therefore verifies with one blake3 pass over a slice
+it already holds instead of re-encoding what it just decoded. Measured on a
+1050-routine pack, release, median of 40: the re-encode was **33 % of the pre-fix
+decode** (670 µs → 448 µs, both with `sig_fp` still a decimal string, so the two
+builds differ only in the envelope; a debug build measured 44 %). Hashing the
+encoded bytes changes WHICH guard catches a corruption postcard itself rejects
+anyway — the hash fires first now, instead of never being reached — and a
+controlled before/after (identical 296,841-byte pack, identical 32,768 single-bit
+flips over the body's first 4 KiB, ordering the only variable) takes the self-hash
+share of that population from 24,735 (75.5 %) to all 32,768 (100 %), with zero
+flips decoding to a wrong pack in either ordering. (An earlier revision quoted
+299/322 → 5127/5200: directionally the same result, but not a controlled
+comparison — the fixture and the flip population both changed in the same commit
+as the ordering.) On all evidence gathered, both orderings reject the same
+corruption set — what moved is which check catches it, not the set's size.
+
+`schema` is on the wire TWICE — in the header, so an incompatible format is rejected
+before the body is parsed or hashed, and in the body, where the hash authenticates
+it. `decode` compares them. The header copy alone would be unauthenticated, which has
+a concrete window once a second version exists: a flip turning a future pack's header
+from `2` into `1` passes the header check and passes the body hash (which does not
+cover the header), and the v2 body would be parsed as v1. One byte buys an enforced
+invariant instead of an assumed one.
+
+`RoutineNodeId.sig_fp`'s decimal-string encoding is now gated on
+`is_human_readable()`. It exists for JavaScript LSP clients (JSON numbers are exact
+only to 2^53) and is load-bearing THERE, but on the binary wire a `u64` is exact by
+construction, so the detour cost a `to_string` per encode and a `String` +
+`parse::<u64>()` per decode on every routine — ~253k allocations per load at the
+scale a pack is built for. Off the ENVELOPE-ONLY build it takes a further 3 % off
+decode (448 µs → 434 µs) and 4.3 % off the wire (220,703 → 211,253 bytes). That wire
+figure is arithmetic, not a lone measurement, and it is fixture-specific: the
+harness gives every routine `sig_fp = 2^53 + 1`, which is 16 decimal digits (17
+postcard bytes, one length prefix plus the digits) against a 54-bit varint (8 bytes)
+— 9 bytes per encoded `RoutineNodeId` × 1050 routines = 9,450 bytes, exactly the
+measured delta on this harness pack. The harness predates `routine_meta` and so
+carries only ONE `RoutineNodeId` per routine (`RoutineNode.id`); a shipped pack
+carries two (the `routine_meta` key as well), so production saves roughly double
+the per-routine figure above, on top of real fingerprints spanning the full `u64`
+(~20 digits against a 10-byte varint). The JSON contract is unchanged and still
+tested.
+
+### Added - `benches/dep_pack_roundtrip.rs`: the dependency pack format go/no-go gate
+
+The measurement that decides the pack cache's artifact format, per
+`docs/superpowers/specs/2026-08-07-dependency-pack-cache-design.md` §13. **Verdict:
+PROCEED with postcard** — worst round **110.2 ms** in a logged 36-round sample on DO
+(10,662 dependency objects / 119,773 routines / 119,773 `RoutineMeta`, a 33.25 MB
+artifact; range 66.2–110.2 ms, median 85.0, mean 83.8) against a ~200 ms proceed line and
+~600 ms switch line, to save a **measured 1,204–1,336 ms on the same corpus**. The shared
+string-table alternative stays in reserve. Ledger:
+`docs/2026-08-07-dep-pack-gate-measurement.md`; raw stdout of all six runs:
+`docs/measurements/2026-08-07-dep-pack-gate-runs.log`, from which every timing in the
+ledger is transcribed.
+
+**110.2 ms is a sample maximum on a shared machine, not a bound — treat it as ±20 %.** An
+independent reviewer re-running the prior commit's binary on the same workspace got a
+worse worst round, **121.1 ms**, which is recorded in the ledger rather than discarded:
+an external reproduction that came in worse and still cleared by 1.65× is stronger
+evidence for PROCEED than our own numbers. The spread is most likely concurrent load on a
+shared machine, but no isolating probe was run and that attribution is not established.
+
+The saving is measured on the SAME corpus rather than quoted across corpora: the bench
+now times `parse_snapshot` + `build_dep_layer` (what a hit replaces) in every run. Spec
+§13's ~1,280 ms comes from `docs/2026-08-02-dep-parse-sizing.md`, whose workspace root is
+unrecorded and which no root in this checkout reproduces, so a ratio against it would mix
+populations.
+
+It measures the HIT-PATH SHAPE, not a micro-benchmark — per-app pack files, parallel
+decode on `big_stack_pool()` (the same local pool `parse_snapshot` installs into, not
+rayon's global), and the `AppRef` re-intern of all three id sites per routine
+(`ObjectNode.id`, `RoutineNode.id`, the `routine_meta` key) inside the timed region. A
+serial in-memory round trip sails under the threshold and proves nothing about what the
+ingestion seam will build. The gate exits non-zero when `PACK_BENCH_WS` is unset rather
+than silently passing, and asserts the dep `RoutineMeta` tier is non-empty before it
+measures anything — without that tier a pack is roughly a third of the real bytes and the
+run would be a floor, not a decision.
+
+Both artifact shapes are built and timed and the verdict takes the worst round of either:
+one `PackedFile` per source file (spec §6's shape, 7,416 frames, 33.25 MB) and one
+synthetic frame per app (32.83 MB). Per-file framing measured at 59 bytes per frame and
+cost no time — the per-file shape decoded faster in all six logged runs — so nothing here
+is adjusted by an estimate of what framing would have cost.
+
+Three findings worth carrying into spec step 5:
+
+- **The wall time is one pack.** Base Application is 100,944 of the 119,773 routines and
+  accounted for 89–99 % of each round across the logged sample (the reviewer's re-run saw
+  one shape at 75 %, so it is high but variable). The parallelism the spec leaned on to
+  carry postcard is nearly exhausted at nine packs of very unequal size, so more cores
+  will not help and the figure scales with Base Application rather than with workspace
+  size. Re-run this gate on a major BC version bump.
+- **Integrity is ~3 ms of an ~85 ms round**, which also bounds what a format switch could
+  win: a string table changes the parse, not the blake3 pass and not the read.
+- **Rebuilding `Arc<DepMetaMap>` from the packed tier costs a further 67.9–74.0 ms** (86.0
+  in the reviewer's re-run) and is deliberately NOT in the gate number — a pack stores
+  that tier as a `Vec` and `DeclSurface` needs a `HashMap`. Excluded because the format
+  choice does not turn on it (a string table would not make a `HashMap` build faster), but
+  step 5 must budget it: the worst genuinely observed single run pairs 121.1 ms of load
+  with 86.0 ms of map build for 207.1 ms all-in, against ~1,262 ms saved.
+
+Two limits are recorded in the ledger rather than smoothed over. **Spec §13's "cold OS
+file cache at least once" is NOT met** — the bench writes the packs moments before the
+rounds, so their pages are resident and no ordering change can make round 0 cold; a
+`FILE_FLAG_NO_BUFFERING` read is the route if the sub-13 ms read share is ever worth
+unsafe FFI in a bench. No substitute figure is offered, and an earlier revision's derived
+"~4 ms cold penalty" is withdrawn as unsupported. Second, the DO population came in 5–9 %
+below the figures `docs/2026-08-02-dep-parse-sizing.md` quoted; unzipping `.alpackages`
+directly confirms the snapshot ingests **all 10,800** embedded `.al` files, app for app,
+so nothing is dropped — but the CAUSE is not established. An earlier claim that the
+`.alpackages` contents had changed is withdrawn (every `.app` there predates the sizing
+run), and neither of this checkout's two dependency-bearing DO roots reproduces the
+sizing doc's triple.
+
+### Added - `RawKind::try_from_raw` and `RawKind::ALL` (generated)
+
+`try_from_raw` is the total sibling of `from_raw`: `None` where `from_raw` panics
+(an anonymous token kind, or a string from a different grammar). It exists so a
+persistence layer can fail to STORE rather than abort — `RawNode::kind_str` returns
+the raw kind of ANY node, named or anonymous, and nothing at the type level
+restricts which nodes an `Origin` is minted from. `from_raw` is now implemented in
+terms of it, so the 389-arm match is generated once and the panic contract is
+unchanged.
+
+`ALL` is every variant in declaration order, so `ALL[k as usize] == k`. It gives the
+vocabulary exhaustive iteration and a total index-to-kind mapping for callers that
+encode a kind positionally. It is POSITIONAL and therefore not stable across grammar
+revisions — sound for the pack only because `crates/` is inside the pack fingerprint
+closure (spec §8), so regenerating the raw vocabulary invalidates every pack.
+
+Both come from the GENERATOR (`crates/xtask/src/main.rs`), not a hand edit to
+`crates/al-syntax/src/raw/generated/raw_kind.rs` — that file is `@generated` and the
+next `cargo run -p xtask -- gen-syntax` would silently revert a hand edit.
+`al_syntax::ir::Origin` also gained `PartialEq`/`Eq` so a wire round-trip can be
+asserted totally rather than field-by-field, which a struct growing a field would
+silently stop covering.
+
+### Fixed - `xtask gen-syntax`'s doc no longer claims CI runs `--check`, which is both false and broken
+
+The generated `raw/generated/mod.rs` header said "CI runs `--check` to catch drift".
+CI does not: `scripts/ci-steps gen-syntax` regenerates and `git diff --exit-code`s
+the result, which is a sound guard. `--check` is a different, unused code path, and
+it reports false drift on a pristine tree — it compares the RAW generator output
+against files the write path has since run through `rustfmt`, so anything rustfmt
+reflows looks stale. Today that is three files: an over-100-column match arm in
+`raw_kind.rs` (two arms, introduced by `try_from_raw` above) and the `pub use` lists
+rustfmt sorts in `nodes.rs` and `mod.rs`.
+
+Corrected in the generator (so the claim does not come back on the next regen) and
+recorded in `xtask`'s own module doc, including how to fix `--check` if it is ever
+wanted: format the in-memory content before comparing, or delete the flag. Nothing
+depends on it today.
+
 ### Fixed - `xtask gen-syntax` explains a missing grammar checkout instead of a bare `os error 3`, and now honours `TREE_SITTER_AL_PATH`
 
 `gen-syntax` needs `tree-sitter-al/src/node-types.json`, but a git worktree

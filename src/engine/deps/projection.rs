@@ -383,7 +383,7 @@ pub fn project_abi_to_index(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::deps::symbol_reference::{AbiEventKind, AbiParameter};
+    use crate::engine::deps::symbol_reference::{AbiEventKind, AbiParameter, SubtypeTag};
 
     fn routine(name: &str, params: Vec<AbiParameter>, ret: Option<&str>) -> AbiRoutine {
         AbiRoutine {
@@ -421,7 +421,7 @@ mod tests {
                 is_temporary: false,
                 subtype_id: None,
                 subtype_raw_name: None,
-                subtype_tag: "no_subtype",
+                subtype_tag: SubtypeTag::NoSubtype,
             }],
             Some("Integer"),
         );

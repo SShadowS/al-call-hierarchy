@@ -52,7 +52,7 @@ fn fold_param_discriminator(
             .unwrap_or("")
             .fold_identifier(),
     );
-    write_len_prefixed(buf, p.subtype_tag);
+    write_len_prefixed(buf, p.subtype_tag.as_str());
 }
 
 /// The ABI overload dedup fingerprint (`RoutineNodeId::sig_fp`) — a
@@ -621,7 +621,7 @@ pub fn ingest_abi(unit: &AppUnit, app: AppRef, cache: &AbiCache) -> AbiIngestRes
 mod tests {
     use super::*;
     use crate::engine::deps::symbol_reference::{
-        AbiEventKind as SrAbiEventKind, AbiField, AbiObject, AbiParameter, AbiRoutine,
+        AbiEventKind as SrAbiEventKind, AbiField, AbiObject, AbiParameter, AbiRoutine, SubtypeTag,
         SymbolReferenceAbi,
     };
     use crate::program::build::build_program_graph;
@@ -670,7 +670,7 @@ mod tests {
                                 is_temporary: false,
                                 subtype_id: None,
                                 subtype_raw_name: None,
-                                subtype_tag: "no_subtype",
+                                subtype_tag: SubtypeTag::NoSubtype,
                             },
                             AbiParameter {
                                 name: "p2".into(),
@@ -679,7 +679,7 @@ mod tests {
                                 is_temporary: false,
                                 subtype_id: None,
                                 subtype_raw_name: None,
-                                subtype_tag: "no_subtype",
+                                subtype_tag: SubtypeTag::NoSubtype,
                             },
                         ],
                         return_type_text: None,
@@ -702,7 +702,7 @@ mod tests {
                             is_temporary: false,
                             subtype_id: None,
                             subtype_raw_name: None,
-                            subtype_tag: "no_subtype",
+                            subtype_tag: SubtypeTag::NoSubtype,
                         }],
                         return_type_text: None,
                         return_type_id: None,
@@ -724,7 +724,7 @@ mod tests {
                             is_temporary: false,
                             subtype_id: None,
                             subtype_raw_name: None,
-                            subtype_tag: "no_subtype",
+                            subtype_tag: SubtypeTag::NoSubtype,
                         }],
                         return_type_text: None,
                         return_type_id: None,
@@ -746,7 +746,7 @@ mod tests {
                             is_temporary: false,
                             subtype_id: None,
                             subtype_raw_name: None,
-                            subtype_tag: "no_subtype",
+                            subtype_tag: SubtypeTag::NoSubtype,
                         }],
                         return_type_text: None,
                         return_type_id: None,
@@ -1646,7 +1646,7 @@ codeunit 50900 "Subscriber CU"
         type_text: &str,
         subtype_id: Option<i64>,
         subtype_raw_name: Option<&str>,
-        subtype_tag: &'static str,
+        subtype_tag: SubtypeTag,
     ) -> AbiParameter {
         AbiParameter {
             name: "x".into(),
@@ -1671,13 +1671,13 @@ codeunit 50900 "Subscriber CU"
             "Codeunit \"Dep A\"",
             Some(60130),
             Some("Dep A"),
-            "full",
+            SubtypeTag::Full,
         )];
         let p2 = vec![abi_param(
             "Codeunit \"Dep A\"",
             Some(60130),
             Some("Dep A"),
-            "full",
+            SubtypeTag::Full,
         )];
         assert_eq!(param_type_fp(&p1), param_type_fp(&p2));
     }
@@ -1689,8 +1689,8 @@ codeunit 50900 "Subscriber CU"
     /// `RoutineNodeId`s instead of silently colliding.
     #[test]
     fn param_type_fp_different_id_only_subtypes_never_collide() {
-        let p10 = vec![abi_param("Codeunit", Some(10), None, "id_only")];
-        let p20 = vec![abi_param("Codeunit", Some(20), None, "id_only")];
+        let p10 = vec![abi_param("Codeunit", Some(10), None, SubtypeTag::IdOnly)];
+        let p20 = vec![abi_param("Codeunit", Some(20), None, SubtypeTag::IdOnly)];
         assert_ne!(param_type_fp(&p10), param_type_fp(&p20));
     }
 
@@ -1703,13 +1703,13 @@ codeunit 50900 "Subscriber CU"
             "Codeunit",
             Some(1),
             Some("Weird\"NameA"),
-            "name_quoted",
+            SubtypeTag::NameQuoted,
         )];
         let pb = vec![abi_param(
             "Codeunit",
             Some(1),
             Some("Weird\"NameB"),
-            "name_quoted",
+            SubtypeTag::NameQuoted,
         )];
         assert_ne!(param_type_fp(&pa), param_type_fp(&pb));
     }
@@ -1721,8 +1721,8 @@ codeunit 50900 "Subscriber CU"
     /// from `"empty_subtype"` even when id/name are both `None` in either.
     #[test]
     fn param_type_fp_no_subtype_vs_empty_subtype_tag_distinguishes() {
-        let no_subtype = vec![abi_param("Codeunit", None, None, "no_subtype")];
-        let empty_subtype = vec![abi_param("Codeunit", None, None, "empty_subtype")];
+        let no_subtype = vec![abi_param("Codeunit", None, None, SubtypeTag::NoSubtype)];
+        let empty_subtype = vec![abi_param("Codeunit", None, None, SubtypeTag::EmptySubtype)];
         assert_ne!(param_type_fp(&no_subtype), param_type_fp(&empty_subtype));
     }
 
@@ -1735,13 +1735,13 @@ codeunit 50900 "Subscriber CU"
             "Codeunit \"Dep A\"",
             Some(60130),
             Some("Dep A"),
-            "full",
+            SubtypeTag::Full,
         )];
         let dep_c = vec![abi_param(
             "Codeunit \"Dep C\"",
             Some(60140),
             Some("Dep C"),
-            "full",
+            SubtypeTag::Full,
         )];
         assert_ne!(param_type_fp(&dep_a), param_type_fp(&dep_c));
     }
@@ -1977,14 +1977,14 @@ codeunit 50900 "Subscriber CU"
             params[3].subtype_raw_name.as_deref(),
             Some("Assisted Setup Group")
         );
-        assert_eq!(params[3].subtype_tag, "full");
+        assert_eq!(params[3].subtype_tag, SubtypeTag::Full);
         assert_eq!(params[4].type_text, "Enum \"Manual Setup Category\"");
         assert_eq!(params[4].subtype_id, Some(1875));
         assert_eq!(
             params[4].subtype_raw_name.as_deref(),
             Some("Manual Setup Category")
         );
-        assert_eq!(params[4].subtype_tag, "full");
+        assert_eq!(params[4].subtype_tag, SubtypeTag::Full);
 
         // None of these are `var` — the real JSON carries no `IsVar` key on
         // any of these 5 (absent → `false`, never a guessed `true`).

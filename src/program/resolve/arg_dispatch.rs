@@ -1567,6 +1567,7 @@ pub(crate) fn pick_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::deps::symbol_reference::SubtypeTag;
     use crate::program::node::{AppRef, ObjKey};
 
     /// A minimal, arbitrary `ObjectNodeId` for tests that only need `from`'s
@@ -2194,7 +2195,6 @@ mod tests {
     fn test_origin() -> al_syntax::ir::Origin {
         al_syntax::ir::Origin {
             kind_text: "",
-            ts_id: 0,
             byte: 0..0,
             start: al_syntax::ir::Point { row: 0, column: 0 },
             end: al_syntax::ir::Point { row: 0, column: 0 },
@@ -3575,7 +3575,7 @@ codeunit 50700 "Caller"
         is_var: bool,
         subtype_id: Option<i64>,
         subtype_raw_name: Option<&str>,
-        subtype_tag: &'static str,
+        subtype_tag: SubtypeTag,
     ) -> AbiParamRetained {
         AbiParamRetained {
             type_text: type_text.to_string(),
@@ -3739,7 +3739,7 @@ codeunit 50700 "Caller"
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
         let from = test_object_id();
-        let p = abi_param("Text[30]", false, None, None, "no_subtype");
+        let p = abi_param("Text[30]", false, None, None, SubtypeTag::NoSubtype);
         assert_eq!(
             abi_param_canonical(&p, &from, &graph, &index),
             Some(CanonicalArgType::Base("text".to_string()))
@@ -3762,7 +3762,7 @@ codeunit 50700 "Caller"
             false,
             None,
             None,
-            "no_subtype",
+            SubtypeTag::NoSubtype,
         );
         let abi_canonical = abi_param_canonical(&p, &from, &graph, &index);
         let source_canonical =
@@ -3790,8 +3790,14 @@ codeunit 50700 "Caller"
         let index = ResolveIndex::build(&graph);
         let from = test_object_id();
 
-        let id_only = abi_param("Record", false, Some(36), None, "id_only");
-        let full = abi_param("Record \"Customer\"", false, None, Some("Customer"), "full");
+        let id_only = abi_param("Record", false, Some(36), None, SubtypeTag::IdOnly);
+        let full = abi_param(
+            "Record \"Customer\"",
+            false,
+            None,
+            Some("Customer"),
+            SubtypeTag::Full,
+        );
 
         let by_id = abi_param_canonical(&id_only, &from, &graph, &index);
         let by_name = abi_param_canonical(&full, &from, &graph, &index);
@@ -3816,21 +3822,27 @@ codeunit 50700 "Caller"
         let index = ResolveIndex::build(&graph);
         let from = test_object_id();
 
-        let ghost = abi_param("Record", false, None, Some("Ghost Table"), "name_quoted");
+        let ghost = abi_param(
+            "Record",
+            false,
+            None,
+            Some("Ghost Table"),
+            SubtypeTag::NameQuoted,
+        );
         assert_eq!(
             abi_param_canonical(&ghost, &from, &graph, &index),
             None,
             "a raw Subtype name absent from the closure must decline, never guess"
         );
 
-        let empty = abi_param("Record", false, None, None, "empty_subtype");
+        let empty = abi_param("Record", false, None, None, SubtypeTag::EmptySubtype);
         assert_eq!(
             abi_param_canonical(&empty, &from, &graph, &index),
             None,
             "an object-bearing keyword with neither a raw name nor a raw id has no identity to resolve"
         );
 
-        let blank = abi_param("", false, None, None, "no_type_definition");
+        let blank = abi_param("", false, None, None, SubtypeTag::NoTypeDefinition);
         assert_eq!(
             abi_param_canonical(&blank, &from, &graph, &index),
             None,
@@ -3855,7 +3867,13 @@ codeunit 50700 "Caller"
         let index = ResolveIndex::build(&graph);
         let from = test_object_id();
 
-        let already_quoted = abi_param("Record \"Customer\"", false, None, None, "already_quoted");
+        let already_quoted = abi_param(
+            "Record \"Customer\"",
+            false,
+            None,
+            None,
+            SubtypeTag::AlreadyQuoted,
+        );
         assert_eq!(
             abi_param_canonical(&already_quoted, &from, &graph, &index),
             Some(CanonicalArgType::Object(ObjectNodeId {
@@ -3886,7 +3904,7 @@ codeunit 50700 "Caller"
             false,
             None,
             Some("Vendor"),
-            "already_quoted",
+            SubtypeTag::AlreadyQuoted,
         );
         assert_eq!(
             abi_param_canonical(&contradictory, &from, &graph, &index),
@@ -3922,7 +3940,13 @@ codeunit 50700 "Caller"
             "process",
             1,
             111,
-            AbiParams::Complete(vec![abi_param("Text", false, None, None, "no_subtype")]),
+            AbiParams::Complete(vec![abi_param(
+                "Text",
+                false,
+                None,
+                None,
+                SubtypeTag::NoSubtype,
+            )]),
         );
         let record_overload = abi_routine_node(
             &obj_id,
@@ -3934,7 +3958,7 @@ codeunit 50700 "Caller"
                 false,
                 None,
                 None,
-                "already_quoted",
+                SubtypeTag::AlreadyQuoted,
             )]),
         );
         graph.routines = vec![text_overload.clone(), record_overload.clone()];
@@ -3980,14 +4004,26 @@ codeunit 50700 "Caller"
             "getvalue",
             1,
             111,
-            AbiParams::Complete(vec![abi_param("Text", false, None, None, "no_subtype")]),
+            AbiParams::Complete(vec![abi_param(
+                "Text",
+                false,
+                None,
+                None,
+                SubtypeTag::NoSubtype,
+            )]),
         );
         let int_overload = abi_routine_node(
             &obj_id,
             "getvalue",
             1,
             222,
-            AbiParams::Complete(vec![abi_param("Integer", false, None, None, "no_subtype")]),
+            AbiParams::Complete(vec![abi_param(
+                "Integer",
+                false,
+                None,
+                None,
+                SubtypeTag::NoSubtype,
+            )]),
         );
         let graph = abi_object_graph(&obj_id, vec![text_overload.clone(), int_overload.clone()]);
         let index = ResolveIndex::build(&graph);
@@ -4026,7 +4062,13 @@ codeunit 50700 "Caller"
             "setvalue",
             1,
             333,
-            AbiParams::Complete(vec![abi_param("Integer", true, None, None, "no_subtype")]),
+            AbiParams::Complete(vec![abi_param(
+                "Integer",
+                true,
+                None,
+                None,
+                SubtypeTag::NoSubtype,
+            )]),
         );
         let graph = abi_object_graph(&obj_id, vec![var_overload.clone()]);
         let index = ResolveIndex::build(&graph);

@@ -16,7 +16,7 @@
 //! an `error` string (the TS "never throws" / catch posture).
 
 use crate::engine::l3::al_attributes::{AttributeArg, AttributeInfo};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// "integration" | "business" | "unknown" — only meaningful when the routine kind
@@ -34,6 +34,111 @@ impl AbiEventKind {
             AbiEventKind::Integration => "integration",
             AbiEventKind::Business => "business",
             AbiEventKind::Unknown => "unknown",
+        }
+    }
+}
+
+/// The degradation SHAPE behind [`AbiParameter::type_text`]'s reconstruction
+/// (round-2 addendum) — a closed set over every arm
+/// [`reconstruct_param_field_type`] can return, folded into the fingerprint
+/// so a genuinely scalar parameter (no `Subtype` at all) can never
+/// fingerprint-collide with an object-typed parameter whose `Subtype`
+/// degraded to the same bare outer-name text purely by coincidence of
+/// keyword + absent raw id/name.
+///
+/// Was a `&'static str` carrying exactly these eight values (documented in
+/// this module, but — pre-fix-round-1 — only 5 of the 8 were actually
+/// asserted anywhere; see the correction below). Changed to an enum because
+/// `&'static str` cannot implement `Deserialize` — there is no way to
+/// produce a `'static` borrow from arbitrary input — which made every
+/// struct reaching this field unserializable. See the dependency pack cache
+/// spec, Task 3.
+///
+/// PROVENANCE (which arms the authoring plan named): the plan that
+/// authored this enum documented five variants (`NoName`/`NoSubtype`/
+/// `Full`/`NameQuoted`/`IdOnly`) as the closed set. The real production
+/// path (`reconstruct_param_field_type`) has three MORE arms beyond that
+/// five, already listed in this repo's own PRE-EXISTING doc comment (see
+/// `reconstruct_param_field_type`'s doc) even though the plan's five didn't
+/// name them: `NoTypeDefinition`, `AlreadyQuoted`, `EmptySubtype`. All
+/// eight are represented here; leaving any of the three out would make the
+/// enum lossy relative to the string it replaces.
+///
+/// COVERAGE (a SEPARATE fact from provenance above — do not conflate the
+/// two lists, they overlap only coincidentally): pre-fix-round-1, only 5 of
+/// the 8 variants had ANY test asserting them via the real parse path
+/// anywhere in the workspace, and the 3 with ZERO such coverage were
+/// `NoTypeDefinition`, `NoName`, `EmptySubtype` — NOT the same 3 named
+/// above (`NoName` was one of the plan's original five yet was untested;
+/// `AlreadyQuoted` was outside the plan's five yet WAS already tested, by
+/// two pre-existing tests). Fix round 1 closed this by extending
+/// `subtype_tag_is_a_closed_enum_over_the_real_parse_path`; all eight are
+/// now exercised via the real parse path by a test in this module's `mod
+/// tests`. The `as_str()` string VALUES (distinct from variant closure) are
+/// separately pinned — see [`SubtypeTag::as_str`]'s doc.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SubtypeTag {
+    /// No `TypeDefinition` at all.
+    NoTypeDefinition,
+    /// `TypeDefinition` present, but its outer `Name` is absent (defensive;
+    /// should not occur in real `SymbolReference.json`).
+    NoName,
+    /// The outer `Name` already contains a `"` — a RECORD-typed param's
+    /// `Name` carries the FULL source-shaped text already (e.g. `Record
+    /// "Normal Table"`); passed through UNCHANGED, even when a `Subtype` is
+    /// also present.
+    AlreadyQuoted,
+    /// No `Subtype` object at all — bare pass-through.
+    NoSubtype,
+    /// `Subtype.Name` present and quote-free (`Subtype.Id` may or may not
+    /// also be present — its presence doesn't affect this tag; only a
+    /// quote-free `Name` does).
+    Full,
+    /// `Subtype.Name` present but contains a `"`; text degrades to the bare
+    /// outer keyword (never escaped/synthesized into text), but the raw name
+    /// is still folded into the fingerprint discriminator.
+    NameQuoted,
+    /// `Subtype.Id` present without `Subtype.Name`; text degrades to the
+    /// bare outer keyword, but the raw id is still folded.
+    IdOnly,
+    /// `Subtype` present but carries neither `Name` nor `Id`.
+    EmptySubtype,
+}
+
+impl SubtypeTag {
+    /// The original `&'static str` value this variant replaced — kept so
+    /// `abi_ingest::fold_param_discriminator`'s `sig_fp` fold text (and any
+    /// other string-shaped consumer) stays byte-identical across the type
+    /// change.
+    ///
+    /// Every literal below is pinned BYTE-FOR-BYTE by
+    /// `tests::subtype_tag_as_str_values_are_pinned_and_distinct`, which ALSO
+    /// calls THIS method on every variant, collects the results into a
+    /// `HashSet<&str>`, and asserts its length is 8 — i.e. distinctness is
+    /// checked against `as_str()`'s real output, not against the test's own
+    /// literal table (fix round 2 correction — that was the original,
+    /// defective form of this test: its distinctness set was built from the
+    /// table's own expected strings, never from `as_str()`, so it could not
+    /// fail from a production defect at all, only from a test-authoring
+    /// mistake).
+    ///
+    /// Motivation (fix round 1 — a review finding): before ANY test asserted
+    /// this method's output, `grep -rn 'as_str()' src/ tests/ | grep -i
+    /// subtype` found exactly ONE call site — the production `sig_fp` fold —
+    /// and ZERO assertions anywhere; a probe that renamed `Full`'s string to
+    /// collide with `NoSubtype`'s left every test in the workspace green
+    /// despite creating a genuine `param_type_fp` fingerprint collision, the
+    /// exact silent overload-collapse this discriminator exists to prevent.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SubtypeTag::NoTypeDefinition => "no_type_definition",
+            SubtypeTag::NoName => "no_name",
+            SubtypeTag::AlreadyQuoted => "already_quoted",
+            SubtypeTag::NoSubtype => "no_subtype",
+            SubtypeTag::Full => "full",
+            SubtypeTag::NameQuoted => "name_quoted",
+            SubtypeTag::IdOnly => "id_only",
+            SubtypeTag::EmptySubtype => "empty_subtype",
         }
     }
 }
@@ -75,14 +180,8 @@ pub struct AbiParameter {
     /// Subtype Names sharing the same outer keyword still fingerprint
     /// differently. `None` when the JSON carried no `Subtype.Name` at all.
     pub subtype_raw_name: Option<String>,
-    /// The degradation SHAPE behind `type_text`'s reconstruction — the fourth
-    /// canonical-tuple component (round-2 addendum): `"no_type_definition"` |
-    /// `"no_name"` | `"no_subtype"` | `"full"` | `"name_quoted"` | `"id_only"`
-    /// | `"empty_subtype"`. Folded into the fingerprint so a genuinely scalar
-    /// parameter (no `Subtype` at all) can never fingerprint-collide with an
-    /// object-typed parameter whose `Subtype` degraded to the same bare
-    /// outer-name text purely by coincidence of keyword + absent raw id/name.
-    pub subtype_tag: &'static str,
+    /// See [`SubtypeTag`].
+    pub subtype_tag: SubtypeTag,
 }
 
 /// A routine signature from `SymbolReference.json`. No body, no anchor, no per-run id.
@@ -700,38 +799,39 @@ fn return_type_subtype_id(t: &RawTypeDef) -> Option<(String, i64)> {
 /// critical) — never used to synthesize `text` itself, purely fingerprint
 /// input.
 ///
-/// - No `TypeDefinition` at all → `("", None, None, "no_type_definition")`.
+/// - No `TypeDefinition` at all → `("", None, None, SubtypeTag::NoTypeDefinition)`.
 /// - `TypeDefinition` present, no `Name` (defensive; should not occur) →
-///   `("", None, None, "no_name")`.
+///   `("", None, None, SubtypeTag::NoName)`.
 /// - `Name` ALREADY CONTAINS A `"` (a RECORD-typed param's `Name` is observed
 ///   to carry the FULL source-shaped text already, e.g. `Record "Normal
 ///   Table"` — a real Continia Core 29.0 shape, see `tests/temp_state_abi.rs`)
-///   → `(Name, Subtype.Id, Subtype.Name, "already_quoted")` UNCHANGED, even
-///   when a Subtype is ALSO present (sometimes redundantly naming the SAME
+///   → `(Name, Subtype.Id, Subtype.Name, SubtypeTag::AlreadyQuoted)` UNCHANGED,
+///   even when a Subtype is ALSO present (sometimes redundantly naming the SAME
 ///   object) — NEVER re-append `"{Subtype.Name}"`, which would double-quote-
 ///   corrupt an already-complete string (round-2 fold-in landmine).
 /// - `Name` present (bare, no embedded quote), no `Subtype` → `(Name, None,
-///   None, "no_subtype")` — bare pass-through, UNCHANGED from today's
+///   None, SubtypeTag::NoSubtype)` — bare pass-through, UNCHANGED from today's
 ///   fidelity.
 /// - `Subtype.Name` present, quote-free → `("{Name} \"{Subtype.Name}\"",
-///   Subtype.Id, Some(Subtype.Name), "full")` — full source-shaped text,
-///   e.g. `Codeunit "Dep A"` / `Enum "My Enum"`.
+///   Subtype.Id, Some(Subtype.Name), SubtypeTag::Full)` — full source-shaped
+///   text, e.g. `Codeunit "Dep A"` / `Enum "My Enum"`.
 /// - `Subtype.Name` present but contains a `"` → `(Name, Subtype.Id,
-///   Some(Subtype.Name), "name_quoted")` — TEXT degrades to the bare outer
-///   name (never escapes/synthesizes into text), but the raw name is STILL
-///   folded into the fingerprint discriminator.
-/// - `Subtype.Id` present, no `Name` → `(Name, Some(Id), None, "id_only")` —
-///   TEXT degrades to the bare outer name; the raw id is STILL folded.
+///   Some(Subtype.Name), SubtypeTag::NameQuoted)` — TEXT degrades to the bare
+///   outer name (never escapes/synthesizes into text), but the raw name is
+///   STILL folded into the fingerprint discriminator.
+/// - `Subtype.Id` present, no `Name` → `(Name, Some(Id), None,
+///   SubtypeTag::IdOnly)` — TEXT degrades to the bare outer name; the raw id
+///   is STILL folded.
 /// - `Subtype` present but carries neither `Name` nor `Id` → `(Name, None,
-///   None, "empty_subtype")`.
+///   None, SubtypeTag::EmptySubtype)`.
 fn reconstruct_param_field_type(
     t: Option<&RawTypeDef>,
-) -> (String, Option<i64>, Option<String>, &'static str) {
+) -> (String, Option<i64>, Option<String>, SubtypeTag) {
     let Some(t) = t else {
-        return (String::new(), None, None, "no_type_definition");
+        return (String::new(), None, None, SubtypeTag::NoTypeDefinition);
     };
     let Some(outer_name) = t.name.as_deref() else {
-        return (String::new(), None, None, "no_name");
+        return (String::new(), None, None, SubtypeTag::NoName);
     };
     // ALREADY-QUOTED LANDMINE (round-2 fold-in fix): a RECORD-typed param's
     // `TypeDefinition.Name` is observed to carry the FULL source-shaped text
@@ -752,27 +852,27 @@ fn reconstruct_param_field_type(
             outer_name.to_string(),
             sub.and_then(|s| s.id),
             sub.and_then(|s| s.name.clone()),
-            "already_quoted",
+            SubtypeTag::AlreadyQuoted,
         );
     }
     match &t.subtype {
-        None => (outer_name.to_string(), None, None, "no_subtype"),
+        None => (outer_name.to_string(), None, None, SubtypeTag::NoSubtype),
         Some(sub) => match &sub.name {
             Some(sub_name) if !sub_name.contains('"') => (
                 format!("{outer_name} \"{sub_name}\""),
                 sub.id,
                 Some(sub_name.clone()),
-                "full",
+                SubtypeTag::Full,
             ),
             Some(sub_name) => (
                 outer_name.to_string(),
                 sub.id,
                 Some(sub_name.clone()),
-                "name_quoted",
+                SubtypeTag::NameQuoted,
             ),
             None => match sub.id {
-                Some(id) => (outer_name.to_string(), Some(id), None, "id_only"),
-                None => (outer_name.to_string(), None, None, "empty_subtype"),
+                Some(id) => (outer_name.to_string(), Some(id), None, SubtypeTag::IdOnly),
+                None => (outer_name.to_string(), None, None, SubtypeTag::EmptySubtype),
             },
         },
     }
@@ -1537,7 +1637,7 @@ mod tests {
         assert_eq!(p.type_text, "Codeunit \"Dep A\"");
         assert_eq!(p.subtype_id, Some(60130));
         assert_eq!(p.subtype_raw_name.as_deref(), Some("Dep A"));
-        assert_eq!(p.subtype_tag, "full");
+        assert_eq!(p.subtype_tag, SubtypeTag::Full);
     }
 
     // (b) round-1 critical sliver: an Id-only Subtype (no Name — a real
@@ -1580,8 +1680,8 @@ mod tests {
             "two DIFFERENT Id-only subtypes must carry DIFFERENT raw \
              discriminators despite identical bare-fallback text"
         );
-        assert_eq!(p10.subtype_tag, "id_only");
-        assert_eq!(p20.subtype_tag, "id_only");
+        assert_eq!(p10.subtype_tag, SubtypeTag::IdOnly);
+        assert_eq!(p20.subtype_tag, SubtypeTag::IdOnly);
     }
 
     // (b) sibling FORMAT LANDMINE: a Subtype.Name containing a `"` also falls
@@ -1612,8 +1712,8 @@ mod tests {
             "two DIFFERENT quote-bearing Subtype Names sharing the same Id \
              must still carry different raw-name discriminators"
         );
-        assert_eq!(pa.subtype_tag, "name_quoted");
-        assert_eq!(pb.subtype_tag, "name_quoted");
+        assert_eq!(pa.subtype_tag, SubtypeTag::NameQuoted);
+        assert_eq!(pb.subtype_tag, SubtypeTag::NameQuoted);
     }
 
     // Control: a bare scalar param (no Subtype at all) is UNCHANGED — the
@@ -1631,7 +1731,7 @@ mod tests {
         assert_eq!(p.type_text, "Integer");
         assert_eq!(p.subtype_id, None);
         assert_eq!(p.subtype_raw_name, None);
-        assert_eq!(p.subtype_tag, "no_subtype");
+        assert_eq!(p.subtype_tag, SubtypeTag::NoSubtype);
     }
 
     // ALREADY-QUOTED LANDMINE regression (round-2 fold-in fix, found by
@@ -1654,7 +1754,7 @@ mod tests {
             p.type_text, "Record \"Normal Table\"",
             "an already-quoted outer Name must never be re-appended to"
         );
-        assert_eq!(p.subtype_tag, "already_quoted");
+        assert_eq!(p.subtype_tag, SubtypeTag::AlreadyQuoted);
     }
 
     // Sibling control: the SAME already-quoted outer Name with NO Subtype at
@@ -1670,7 +1770,146 @@ mod tests {
         let m = parse_method(&raw);
         let p = &m.parameters[0];
         assert_eq!(p.type_text, "Record \"Normal Table\"");
-        assert_eq!(p.subtype_tag, "already_quoted");
+        assert_eq!(p.subtype_tag, SubtypeTag::AlreadyQuoted);
+    }
+
+    /// Parses a single parameter's JSON shape (a `Parameters[0]` element body,
+    /// e.g. `{"Name":"p","TypeDefinition":{...}}`) through the SAME
+    /// production path every other test in this module uses (`parse_method`)
+    /// — wraps it in a minimal `RawMethod` envelope rather than inventing a
+    /// second, divergent parsing route.
+    fn parse_param_json(param_json: &str) -> AbiParameter {
+        let wrapped = format!(r#"{{"Name":"Get","Parameters":[{param_json}]}}"#);
+        let raw: RawMethod = serde_json::from_str(&wrapped).unwrap();
+        let m = parse_method(&raw);
+        m.parameters.into_iter().next().unwrap()
+    }
+
+    /// Fix round 1 — review finding (Important 1): `SubtypeTag::as_str()` is
+    /// load-bearing (it feeds `abi_ingest::fold_param_discriminator`'s
+    /// `sig_fp`/`param_type_fp` fold — the exact primitive that keeps two
+    /// different ABI overloads from silently colliding onto one
+    /// `RoutineNodeId`), but before this test existed nothing anywhere in
+    /// the workspace asserted its exact string output: `grep -rn 'as_str()'
+    /// src/ tests/ | grep -i subtype` found exactly ONE line, the production
+    /// call site itself, zero assertions. Two review probes proved this was
+    /// a real gap: renaming `Full`'s literal to a novel string left every
+    /// test green (nothing pins the bytes), and renaming it to COLLIDE with
+    /// `NoSubtype`'s literal ALSO left every test green — a genuine
+    /// `param_type_fp` fingerprint collision between a `Full`-tagged and a
+    /// `NoSubtype`-tagged parameter. This test pins both failure modes:
+    /// the literal value of each variant, and that all eight are pairwise
+    /// distinct.
+    #[test]
+    fn subtype_tag_as_str_values_are_pinned_and_distinct() {
+        let pairs = [
+            (SubtypeTag::NoTypeDefinition, "no_type_definition"),
+            (SubtypeTag::NoName, "no_name"),
+            (SubtypeTag::AlreadyQuoted, "already_quoted"),
+            (SubtypeTag::NoSubtype, "no_subtype"),
+            (SubtypeTag::Full, "full"),
+            (SubtypeTag::NameQuoted, "name_quoted"),
+            (SubtypeTag::IdOnly, "id_only"),
+            (SubtypeTag::EmptySubtype, "empty_subtype"),
+        ];
+        for (tag, expected) in pairs {
+            assert_eq!(tag.as_str(), expected, "{tag:?}'s as_str() literal");
+        }
+        let distinct: std::collections::HashSet<&str> =
+            pairs.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(
+            distinct.len(),
+            pairs.len(),
+            "every SubtypeTag must fold to a DISTINCT sig_fp discriminator \
+             string -- a collision here silently collapses two genuinely \
+             different ABI overloads onto one param_type_fp"
+        );
+    }
+
+    /// Pins the USE — that the real parse path produces each documented
+    /// `SubtypeTag` value — rather than testing a standalone converter.
+    /// Hand-stated preconditions: one raw parameter shape per documented tag,
+    /// constructed literally so this survives any change to how the parser
+    /// reaches these shapes.
+    ///
+    /// Review finding (fix round 1, Important 2): the original version of
+    /// this test asserted only 4 of the 8 variants (`NoSubtype`/`Full`/
+    /// `IdOnly`/`NameQuoted`), all of which pre-existing tests in this module
+    /// ALSO already covered on the same production arm — so despite the
+    /// name, `NoTypeDefinition`/`NoName`/`EmptySubtype` had ZERO parse-path
+    /// coverage anywhere in the workspace. Extended (fix round 1) to close
+    /// those three, then extended again (fix round 2) with `AlreadyQuoted`
+    /// — the remaining variant this test itself hadn't asserted, even
+    /// though `AlreadyQuoted` was already independently covered by two
+    /// pre-existing tests (`parse_method_param_already_quoted_outer_name_*`).
+    /// All 8 variants are now asserted directly by this one test.
+    ///
+    /// STATED LIMIT (per this repo's Testing Philosophy: a discrimination
+    /// proof that passes is evidence about the test, not the code, and a
+    /// break caught by a REDUNDANT second path must be recorded, not left
+    /// implicit): the original commit's Step 9 discrimination proof (flipping
+    /// `IdOnly` → `Full` in `reconstruct_param_field_type`; only the
+    /// RECORDING below is new, added in fix round 1) is caught by this
+    /// test's `id_only` assertion, but is EQUALLY caught by the pre-existing
+    /// `parse_method_param_id_only_subtype_falls_back_to_bare_name_but_keeps_id`
+    /// test above — this test's marginal, EXCLUSIVE discrimination power over
+    /// that specific break is zero. Its real (non-redundant) value is the
+    /// four variants below (the three from fix round 1 plus `AlreadyQuoted`
+    /// from fix round 2), none of which any OTHER single test in the
+    /// workspace covers via this exact minimal-JSON shape.
+    #[test]
+    fn subtype_tag_is_a_closed_enum_over_the_real_parse_path() {
+        let no_subtype = parse_param_json(r#"{"Name":"p","TypeDefinition":{"Name":"Integer"}}"#);
+        assert_eq!(no_subtype.subtype_tag, SubtypeTag::NoSubtype);
+
+        let full = parse_param_json(
+            r#"{"Name":"p","TypeDefinition":{"Name":"Record","Subtype":{"Id":18,"Name":"Customer"}}}"#,
+        );
+        assert_eq!(full.subtype_tag, SubtypeTag::Full);
+
+        let id_only = parse_param_json(
+            r#"{"Name":"p","TypeDefinition":{"Name":"Record","Subtype":{"Id":18}}}"#,
+        );
+        assert_eq!(id_only.subtype_tag, SubtypeTag::IdOnly);
+
+        // NOTE (deviation from the task brief's verbatim fixture): the brief's
+        // JSON for this arm used `"Subtype":{"Name":"Sales Header"}` — a
+        // plain, quote-free name. Per `reconstruct_param_field_type`'s own
+        // arms, a quote-FREE `Subtype.Name` is exactly the `Full` case
+        // (Id is irrelevant to the branch), so that fixture actually produced
+        // `SubtypeTag::Full`, not `NameQuoted` — proven by running it: it
+        // failed with `left: Full, right: NameQuoted`. `NameQuoted` requires
+        // an embedded `"` inside `Subtype.Name` (see the pre-existing
+        // `parse_method_param_quoted_subtype_name_falls_back_but_keeps_raw_name`
+        // test above, which uses the same `Weird\"Name` shape). Corrected here
+        // so the fixture matches the tag it claims to pin.
+        let name_quoted = parse_param_json(
+            r#"{"Name":"p","TypeDefinition":{"Name":"Record","Subtype":{"Name":"Sales \"Header\""}}}"#,
+        );
+        assert_eq!(name_quoted.subtype_tag, SubtypeTag::NameQuoted);
+
+        // -- fix round 1 additions: the three previously-uncovered variants --
+
+        // No `TypeDefinition` key at all.
+        let no_type_definition = parse_param_json(r#"{"Name":"p"}"#);
+        assert_eq!(no_type_definition.subtype_tag, SubtypeTag::NoTypeDefinition);
+
+        // `TypeDefinition` present, but its own `Name` is absent (defensive
+        // arm; should not occur in real `SymbolReference.json`).
+        let no_name = parse_param_json(r#"{"Name":"p","TypeDefinition":{}}"#);
+        assert_eq!(no_name.subtype_tag, SubtypeTag::NoName);
+
+        // `Subtype` present but carries neither `Name` nor `Id`.
+        let empty_subtype =
+            parse_param_json(r#"{"Name":"p","TypeDefinition":{"Name":"Record","Subtype":{}}}"#);
+        assert_eq!(empty_subtype.subtype_tag, SubtypeTag::EmptySubtype);
+
+        // -- fix round 2 addition: the eighth variant, previously asserted
+        // only by other tests, never by this one -- the outer `Name` already
+        // contains a `"`.
+        let already_quoted =
+            parse_param_json(r#"{"Name":"p","TypeDefinition":{"Name":"Record \"Widget\""}}"#);
+        assert_eq!(already_quoted.subtype_tag, SubtypeTag::AlreadyQuoted);
     }
 
     // (c) `parse_field` gets the SAME treatment: an ABI Enum field now
