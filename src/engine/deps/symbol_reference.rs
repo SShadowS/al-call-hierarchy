@@ -54,20 +54,27 @@ impl AbiEventKind {
 /// struct reaching this field unserializable. See the dependency pack cache
 /// spec, Task 3.
 ///
-/// Note: the plan that authored this enum documented five variants
-/// (`NoName`/`NoSubtype`/`Full`/`NameQuoted`/`IdOnly`) as the closed set.
-/// The real production path (`reconstruct_param_field_type`) has three more
-/// arms this repo's own doc comment already listed but — pre-fix-round-1 —
-/// no test exercised via the real parse path: `NoTypeDefinition`, `NoName`,
-/// `EmptySubtype`. All eight are represented here; leaving any of the three
-/// out would make the enum lossy relative to the string it replaces.
+/// PROVENANCE (which arms the authoring plan named): the plan that
+/// authored this enum documented five variants (`NoName`/`NoSubtype`/
+/// `Full`/`NameQuoted`/`IdOnly`) as the closed set. The real production
+/// path (`reconstruct_param_field_type`) has three MORE arms beyond that
+/// five, already listed in this repo's own PRE-EXISTING doc comment (see
+/// `reconstruct_param_field_type`'s doc) even though the plan's five didn't
+/// name them: `NoTypeDefinition`, `AlreadyQuoted`, `EmptySubtype`. All
+/// eight are represented here; leaving any of the three out would make the
+/// enum lossy relative to the string it replaces.
 ///
-/// Coverage, current as of fix round 1: every one of the eight variants is
+/// COVERAGE (a SEPARATE fact from provenance above — do not conflate the
+/// two lists, they overlap only coincidentally): pre-fix-round-1, only 5 of
+/// the 8 variants had ANY test asserting them via the real parse path
+/// anywhere in the workspace, and the 3 with ZERO such coverage were
+/// `NoTypeDefinition`, `NoName`, `EmptySubtype` — NOT the same 3 named
+/// above (`NoName` was one of the plan's original five yet was untested;
+/// `AlreadyQuoted` was outside the plan's five yet WAS already tested, by
+/// two pre-existing tests). Fix round 1 closed this by extending
+/// `subtype_tag_is_a_closed_enum_over_the_real_parse_path`; all eight are
 /// now exercised via the real parse path by a test in this module's `mod
-/// tests` (five pre-existing tests plus
-/// `subtype_tag_is_a_closed_enum_over_the_real_parse_path`, which the
-/// fix-round-1 review prompted extending to close the three gaps named
-/// above). The `as_str()` string VALUES (distinct from variant closure) are
+/// tests`. The `as_str()` string VALUES (distinct from variant closure) are
 /// separately pinned — see [`SubtypeTag::as_str`]'s doc.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SubtypeTag {
@@ -104,16 +111,24 @@ impl SubtypeTag {
     /// other string-shaped consumer) stays byte-identical across the type
     /// change.
     ///
-    /// Every literal below is pinned BYTE-FOR-BYTE, and all eight are
-    /// asserted pairwise DISTINCT, by
-    /// `tests::subtype_tag_as_str_values_are_pinned_and_distinct` (fix round
-    /// 1 — a review finding: before that test existed, `grep -rn 'as_str()'
-    /// src/ tests/ | grep -i subtype` found exactly ONE call site — the
-    /// production `sig_fp` fold — and ZERO assertions anywhere; a probe that
-    /// renamed `Full`'s string to collide with `NoSubtype`'s left every test
-    /// in the workspace green despite creating a genuine `param_type_fp`
-    /// fingerprint collision, the exact silent overload-collapse this
-    /// discriminator exists to prevent).
+    /// Every literal below is pinned BYTE-FOR-BYTE by
+    /// `tests::subtype_tag_as_str_values_are_pinned_and_distinct`, which ALSO
+    /// calls THIS method on every variant, collects the results into a
+    /// `HashSet<&str>`, and asserts its length is 8 — i.e. distinctness is
+    /// checked against `as_str()`'s real output, not against the test's own
+    /// literal table (fix round 2 correction — that was the original,
+    /// defective form of this test: its distinctness set was built from the
+    /// table's own expected strings, never from `as_str()`, so it could not
+    /// fail from a production defect at all, only from a test-authoring
+    /// mistake).
+    ///
+    /// Motivation (fix round 1 — a review finding): before ANY test asserted
+    /// this method's output, `grep -rn 'as_str()' src/ tests/ | grep -i
+    /// subtype` found exactly ONE call site — the production `sig_fp` fold —
+    /// and ZERO assertions anywhere; a probe that renamed `Full`'s string to
+    /// collide with `NoSubtype`'s left every test in the workspace green
+    /// despite creating a genuine `param_type_fp` fingerprint collision, the
+    /// exact silent overload-collapse this discriminator exists to prevent.
     pub fn as_str(&self) -> &'static str {
         match self {
             SubtypeTag::NoTypeDefinition => "no_type_definition",
@@ -1800,7 +1815,8 @@ mod tests {
         for (tag, expected) in pairs {
             assert_eq!(tag.as_str(), expected, "{tag:?}'s as_str() literal");
         }
-        let distinct: std::collections::HashSet<&str> = pairs.iter().map(|(_, s)| *s).collect();
+        let distinct: std::collections::HashSet<&str> =
+            pairs.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(
             distinct.len(),
             pairs.len(),
@@ -1819,22 +1835,28 @@ mod tests {
     /// Review finding (fix round 1, Important 2): the original version of
     /// this test asserted only 4 of the 8 variants (`NoSubtype`/`Full`/
     /// `IdOnly`/`NameQuoted`), all of which pre-existing tests in this module
-    /// ALSO already covered on the same production arm (`AlreadyQuoted` too,
-    /// via `parse_method_param_already_quoted_outer_name_*`) — so despite the
+    /// ALSO already covered on the same production arm — so despite the
     /// name, `NoTypeDefinition`/`NoName`/`EmptySubtype` had ZERO parse-path
-    /// coverage anywhere in the workspace. Extended below to close exactly
-    /// those three; the test now genuinely earns its name.
+    /// coverage anywhere in the workspace. Extended (fix round 1) to close
+    /// those three, then extended again (fix round 2) with `AlreadyQuoted`
+    /// — the remaining variant this test itself hadn't asserted, even
+    /// though `AlreadyQuoted` was already independently covered by two
+    /// pre-existing tests (`parse_method_param_already_quoted_outer_name_*`).
+    /// All 8 variants are now asserted directly by this one test.
     ///
     /// STATED LIMIT (per this repo's Testing Philosophy: a discrimination
     /// proof that passes is evidence about the test, not the code, and a
     /// break caught by a REDUNDANT second path must be recorded, not left
-    /// implicit): the fix-round-1 discrimination proof (flipping `IdOnly` →
-    /// `Full` in `reconstruct_param_field_type`) is caught by this test's
-    /// `id_only` assertion, but is EQUALLY caught by the pre-existing
+    /// implicit): the original commit's Step 9 discrimination proof (flipping
+    /// `IdOnly` → `Full` in `reconstruct_param_field_type`; only the
+    /// RECORDING below is new, added in fix round 1) is caught by this
+    /// test's `id_only` assertion, but is EQUALLY caught by the pre-existing
     /// `parse_method_param_id_only_subtype_falls_back_to_bare_name_but_keeps_id`
     /// test above — this test's marginal, EXCLUSIVE discrimination power over
     /// that specific break is zero. Its real (non-redundant) value is the
-    /// three variants below, which no other test in the workspace covers.
+    /// four variants below (the three from fix round 1 plus `AlreadyQuoted`
+    /// from fix round 2), none of which any OTHER single test in the
+    /// workspace covers via this exact minimal-JSON shape.
     #[test]
     fn subtype_tag_is_a_closed_enum_over_the_real_parse_path() {
         let no_subtype = parse_param_json(r#"{"Name":"p","TypeDefinition":{"Name":"Integer"}}"#);
@@ -1881,6 +1903,13 @@ mod tests {
         let empty_subtype =
             parse_param_json(r#"{"Name":"p","TypeDefinition":{"Name":"Record","Subtype":{}}}"#);
         assert_eq!(empty_subtype.subtype_tag, SubtypeTag::EmptySubtype);
+
+        // -- fix round 2 addition: the eighth variant, previously asserted
+        // only by other tests, never by this one -- the outer `Name` already
+        // contains a `"`.
+        let already_quoted =
+            parse_param_json(r#"{"Name":"p","TypeDefinition":{"Name":"Record \"Widget\""}}"#);
+        assert_eq!(already_quoted.subtype_tag, SubtypeTag::AlreadyQuoted);
     }
 
     // (c) `parse_field` gets the SAME treatment: an ABI Enum field now
