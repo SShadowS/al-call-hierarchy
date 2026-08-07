@@ -205,6 +205,14 @@ harness = false
 name = "engine_stages"
 harness = false
 
+# The dependency pack format's go/no-go gate (spec §13). `harness = false`: a
+# plain `main` measuring the hit-path SHAPE end to end, not a criterion
+# micro-benchmark. Needs `PACK_BENCH_WS` pointed at a real BC workspace and
+# exits non-zero without it.
+[[bench]]
+name = "dep_pack_roundtrip"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1

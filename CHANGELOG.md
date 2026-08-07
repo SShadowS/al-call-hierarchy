@@ -90,6 +90,63 @@ Real fingerprints span the full `u64`, so the per-routine saving in production i
 larger (~20 digits against a 10-byte varint). The JSON contract is unchanged and
 still tested.
 
+### Added - `benches/dep_pack_roundtrip.rs`: the dependency pack format go/no-go gate
+
+The measurement that decides the pack cache's artifact format, per
+`docs/superpowers/specs/2026-08-07-dependency-pack-cache-design.md` §13. **Verdict:
+PROCEED with postcard** — worst round **113.1 ms** across 9 runs / 54 rounds on DO
+(10,662 dependency objects / 119,773 routines / 119,773 `RoutineMeta`, a 33.25 MB
+artifact; full observed range 66.8–113.1 ms, typical ~92 ms) against a ~200 ms proceed
+line and ~600 ms switch line, to save ~1,280 ms per hit. The shared string-table
+alternative stays in reserve. Ledger, every round of every run, and caveats:
+`docs/2026-08-07-dep-pack-gate-measurement.md`.
+
+The verdict is taken from the worst round observed, not a median: the runs shared the
+machine with sibling agent processes at ~26 % baseline CPU load, and the first four runs
+(66.8–84.0 ms) and last five (80.9–113.1 ms) differ by contention alone, with no change
+to the decode path between them. No figure is rounded in the favourable direction and no
+run is dropped.
+
+It measures the HIT-PATH SHAPE, not a micro-benchmark — per-app pack files, parallel
+decode on `big_stack_pool()` (the same local pool `parse_snapshot` installs into, not
+rayon's global), and the `AppRef` re-intern of all three id sites per routine
+(`ObjectNode.id`, `RoutineNode.id`, the `routine_meta` key) inside the timed region. A
+serial in-memory round trip sails under the threshold and proves nothing about what the
+ingestion seam will build. The gate exits non-zero when `PACK_BENCH_WS` is unset rather
+than silently passing, and asserts the dep `RoutineMeta` tier is non-empty before it
+measures anything — without that tier a pack is roughly a third of the real bytes and the
+run would be a floor, not a decision.
+
+Both artifact shapes are built and timed and the verdict takes the worst round of either:
+one `PackedFile` per source file (spec §6's shape, 7,416 frames, 33.25 MB) and one
+synthetic frame per app (32.83 MB). Per-file framing measured at 59 bytes per frame and
+cost no time — the per-file shape decoded faster in 8 of 9 runs — so nothing here is
+adjusted by an estimate of what framing would have cost.
+
+Three findings worth carrying into spec step 5:
+
+- **The wall time is one pack.** Base Application is 100,944 of the 119,773 routines and
+  accounts for 90–99 % of each round. The parallelism the spec leaned on to carry
+  postcard is nearly exhausted at nine packs of very unequal size, so more cores will not
+  help and the figure scales with Base Application rather than with workspace size.
+  Re-run this gate on a major BC version bump.
+- **Integrity is ~3 ms of a ~90 ms load**, which also bounds what a format switch could
+  win: a string table changes the parse, not the blake3 pass and not the read.
+- **Rebuilding `Arc<DepMetaMap>` from the packed tier costs a further 58.0–86.8 ms** and
+  is deliberately NOT in the gate number — a pack stores that tier as a `Vec` and
+  `DeclSurface` needs a `HashMap`. Excluded because the format choice does not turn on it
+  (a string table would not make a `HashMap` build faster), but step 5 must budget it:
+  ~200 ms all-in on the worst observed pairing, against ~1,280 ms saved.
+
+Two honest limits are recorded in the ledger rather than smoothed over. All rounds read
+from a WARM page cache (the bench writes the packs moments before, and Windows offers no
+user-mode eviction); the cold penalty was measured directly on the artifact volume
+instead — 2,956 MB/s cold against 4,800 MB/s warm, so a cold first round adds ~4 ms. And
+the DO population came in 5–9 % below the figures `docs/2026-08-02-dep-parse-sizing.md`
+quoted; unzipping `.alpackages` directly confirms the snapshot ingests **all 10,800**
+embedded `.al` files, app for app, so the difference is in the workspace's contents, not
+in what the engine sees.
+
 ### Added - `RawKind::try_from_raw` and `RawKind::ALL` (generated)
 
 `try_from_raw` is the total sibling of `from_raw`: `None` where `from_raw` panics
