@@ -16,7 +16,9 @@
 - Stage only intended paths. **Never `git add -A`.**
 - `CHANGELOG.md` must be updated for feature additions, bug fixes and breaking changes, in [Keep a Changelog](https://keepachangelog.com/) format under Added/Changed/Deprecated/Removed/Fixed/Security.
 - A test must pin the USE, not just the helper, and you must **prove it can fail** — break the thing, watch the test fail, revert, watch it pass, and record both outcomes. Assert that a scripted break actually applied (e.g. `assert s.count(old) == 1`); an unasserted break that comes back green proves nothing.
-- Do not commit to `master` without checking with the human first if the repository has moved onto a branch by then.
+- Work happens on branch `feat/dep-pack-format-gate`. Never commit to `master`.
+- **Benches must be clippy-clean.** CI does not *run* benches, but `scripts/ci-steps clippy` uses `--all-targets`, which compiles every `benches/*.rs` under `-D warnings` (see `.github/workflows/ci.yml:41-53` — the comment there records that missing `--all-targets` once left every test and bench target completely unlinted). A bench that only compiles under `cargo bench` will fail CI.
+- **Reverting a discrimination-proof break: copy the file to a backup first and restore from that.** Never `git checkout <file>` to undo a break — within a task the file holds uncommitted work from earlier steps, and a newly created file is untracked, so `git checkout` either destroys work or errors.
 
 ## Scope
 
@@ -403,31 +405,36 @@ Required by the Global Constraints. Break the mapping, confirm the test catches 
 
 ```bash
 cd U:/Git/al-call-hierarchy
+export BREAK_BACKUP=/tmp/symbol_reference.rs.bak
+cp src/engine/deps/symbol_reference.rs "$BREAK_BACKUP"
 python - <<'PY'
 import pathlib
 p = pathlib.Path("src/engine/deps/symbol_reference.rs")
 s = p.read_text(encoding="utf-8")
-old = "SubtypeTag::IdOnly)"
-assert s.count(old) >= 1, f"scripted break did not match: {s.count(old)} occurrences"
-# flip the id_only arm to report Full
-s = s.replace("Some(id) => (outer_name.to_string(), Some(id), None, SubtypeTag::IdOnly)",
-              "Some(id) => (outer_name.to_string(), Some(id), None, SubtypeTag::Full)", 1)
-p.write_text(s, encoding="utf-8")
+old = "Some(id) => (outer_name.to_string(), Some(id), None, SubtypeTag::IdOnly)"
+assert s.count(old) == 1, f"scripted break did not match: {s.count(old)} occurrences"
+p.write_text(s.replace(old, old.replace("SubtypeTag::IdOnly", "SubtypeTag::Full"), 1), encoding="utf-8")
 print("break applied")
 PY
 cargo test -p al-call-hierarchy --lib subtype_tag_is_a_closed_enum
 ```
 
-Expected: **FAIL**, on the `IdOnly` assertion. Record the failure output. Then revert:
+If the `assert` fires, the construction site's text differs from what this plan
+recorded — read the real arm at `src/engine/deps/symbol_reference.rs:774`, adapt the
+`old` string to match it exactly, and re-run. Do **not** relax the assertion to a
+`>=` or drop it; an unasserted break that comes back green proves nothing.
+
+Expected: **FAIL**, on the `IdOnly` assertion. Record the failure output. Then revert **from the backup, not from git** — Steps 4-7's work in this file is uncommitted, so `git checkout` would destroy it:
 
 ```bash
-git checkout src/engine/deps/symbol_reference.rs
-# reapply Steps 4-7 if the checkout discarded them — better: use `git stash` on a
-# dirty tree, or make the break by hand and undo it by hand.
+cd U:/Git/al-call-hierarchy
+cp "$BREAK_BACKUP" src/engine/deps/symbol_reference.rs
+rm "$BREAK_BACKUP"
 cargo test -p al-call-hierarchy --lib subtype_tag_is_a_closed_enum
+git diff --stat src/engine/deps/symbol_reference.rs   # Steps 4-7's edits must still be present
 ```
 
-Expected: PASS. If the break came back GREEN, the test is defective — do not proceed; the scripted assertion above guarantees the edit applied, so a green run means the assertion is not reaching the code path.
+Expected: PASS, and the file still shows Steps 4-7's changes. If the break came back GREEN, the test is defective — do not proceed; the scripted assertion above guarantees the edit applied, so a green run means the assertion is not reaching the code path.
 
 - [ ] **Step 10: Lint and commit**
 
@@ -587,6 +594,8 @@ Expected: PASS, clean build.
 
 ```bash
 cd U:/Git/al-call-hierarchy
+export BREAK_BACKUP=/tmp/node.rs.bak
+cp src/program/node.rs "$BREAK_BACKUP"
 python - <<'PY'
 import pathlib
 p = pathlib.Path("src/program/node.rs")
@@ -602,7 +611,9 @@ cargo test -p al-call-hierarchy --lib routine_node_survives_a_json_round_trip
 Expected: **FAIL** on the `sig_fp` assertion, because `0xDEAD_BEEF_CAFE_F00D` exceeds 2^53 and round-trips through an IEEE-754 double. Record the output. Then:
 
 ```bash
-git checkout src/program/node.rs
+cd U:/Git/al-call-hierarchy
+cp "$BREAK_BACKUP" src/program/node.rs
+rm "$BREAK_BACKUP"
 cargo test -p al-call-hierarchy --lib routine_node_survives_a_json_round_trip
 ```
 
@@ -899,6 +910,8 @@ The integrity check is the guard; confirm the test dies without it.
 
 ```bash
 cd U:/Git/al-call-hierarchy
+export BREAK_BACKUP=/tmp/pack_mod.rs.bak
+cp src/program/pack/mod.rs "$BREAK_BACKUP"
 python - <<'PY'
 import pathlib
 p = pathlib.Path("src/program/pack/mod.rs")
@@ -913,12 +926,17 @@ cargo test -p al-call-hierarchy --lib pack::a_corrupted_payload
 
 Expected: **FAIL**. Note the honest limit: postcard may itself reject a corrupted byte stream, in which case the test passes via the `Codec` arm and the break comes back GREEN. **If that happens, it is a real property of the code, not a broken test** — record it as a stated limit of this guard (the self-hash adds value only for corruption postcard accepts as well-formed), and move on. Do not weaken the test to force a failure.
 
-Revert either way:
+Revert either way — **from the backup, not from git**: this file is new and untracked at
+this point, so `git checkout` would error rather than restore it.
 
 ```bash
-git checkout src/program/pack/mod.rs
+cd U:/Git/al-call-hierarchy
+cp "$BREAK_BACKUP" src/program/pack/mod.rs
+rm "$BREAK_BACKUP"
 cargo test -p al-call-hierarchy --lib pack::
 ```
+
+Expected: 3 passed.
 
 - [ ] **Step 7: Lint and commit**
 
