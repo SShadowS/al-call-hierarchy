@@ -179,6 +179,15 @@ The next `use` added silently exits any such list.
 - `src/program/`
 - `src/snapshot/` (covers `embedded.rs` / `cache.rs`, which determine which entries a `.app`
   yields and how virtual paths are named — the `.app` blake3 alone does not fix that)
+- `src/engine/deps/` — **an exception to the `src/engine/` exclusion below, and a
+  mandatory one.** `symbol_reference.rs` defines two types that are serialized INTO packs
+  (`SubtypeTag`, `AbiEventKind`) and contains `reconstruct_param_field_type`, which decides
+  which `SubtypeTag` a parameter receives. That is extraction behaviour, and a change to it
+  must invalidate packs. Found while reviewing Task 4 of the format-gate plan: the original
+  closure below excluded all of `src/engine/`, which would have let tag-assignment logic
+  change without invalidating a single pack — the exact stale-pack hole this section exists
+  to close. The error came from reasoning about DIRECTORIES rather than about the set of
+  types actually reachable from a serialized `ObjectNode`/`RoutineNode`.
 - the tree-sitter-al grammar's **source files** (`grammar.js`, generated `parser.c`), never a
   version string
 - the tree-sitter **runtime** crate's lockfile entry — error recovery lives in the core
@@ -186,7 +195,13 @@ The next `use` added silently exits any such list.
   which changes persisted `parse_incomplete` and recovered-file paths
 - the pack serialization module itself
 
-This deliberately excludes `src/engine/`, `src/lsp/` and `src/bin/`, where most commits land.
+This deliberately excludes `src/engine/` **apart from `src/engine/deps/` above**, plus
+`src/lsp/` and `src/bin/`, where most commits land.
+
+**Derive this closure from the reachable type set, not from directory names.** The
+mandatory check when adding any field to a packed type: locate where its type is DEFINED,
+and confirm that path is inside the closure. `SubtypeTag` sits two directories away from
+every other packed type and was missed exactly once by a directory-shaped reading.
 Over-invalidation costs one ~1,280 ms reparse per base version; a stale pack costs
 correctness.
 
