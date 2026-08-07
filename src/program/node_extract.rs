@@ -3,6 +3,7 @@
 use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, ObjectKind, Param, ParseStatus, RoutineKind};
 
+use crate::engine::deps::symbol_reference::SubtypeTag;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::{
@@ -180,7 +181,7 @@ pub struct AbiParamRetained {
     pub is_var: bool,
     pub subtype_id: Option<i64>,
     pub subtype_raw_name: Option<String>,
-    pub subtype_tag: &'static str,
+    pub subtype_tag: SubtypeTag,
 }
 
 /// The STRUCTURAL guard over a [`RoutineNode`]'s retained ABI parameter

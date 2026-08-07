@@ -16,7 +16,7 @@
 
 use al_call_hierarchy::engine::deps::projection::{abi_canonical_string, project_abi_to_index};
 use al_call_hierarchy::engine::deps::symbol_reference::{
-    AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi,
+    AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SubtypeTag, SymbolReferenceAbi,
 };
 use serde_json::Value;
 
@@ -50,7 +50,7 @@ fn routine_from_row(row: &Value) -> AbiRoutine {
                 is_temporary: false,
                 subtype_id: None,
                 subtype_raw_name: None,
-                subtype_tag: "no_subtype",
+                subtype_tag: SubtypeTag::NoSubtype,
             }
         })
         .collect();

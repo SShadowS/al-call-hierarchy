@@ -17,7 +17,8 @@
 
 use al_call_hierarchy::engine::deps::projection::{ProjectedRoutine, project_abi_to_index};
 use al_call_hierarchy::engine::deps::symbol_reference::{
-    AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi, parse_symbol_reference,
+    AbiEventKind, AbiObject, AbiParameter, AbiRoutine, SubtypeTag, SymbolReferenceAbi,
+    parse_symbol_reference,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -46,7 +47,7 @@ fn routine_from_sig_row(row: &Value) -> AbiRoutine {
                 is_temporary: false,
                 subtype_id: None,
                 subtype_raw_name: None,
-                subtype_tag: "no_subtype",
+                subtype_tag: SubtypeTag::NoSubtype,
             }
         })
         .collect();
